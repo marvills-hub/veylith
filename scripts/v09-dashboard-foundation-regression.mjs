@@ -1,0 +1,43 @@
+﻿import fs from "node:fs";
+const checks=[];
+function check(name,value){checks.push([name,Boolean(value)])}
+const index=fs.readFileSync("public/index.html","utf8");
+const css=fs.readFileSync("public/css/app.css","utf8");
+const app=fs.readFileSync("public/js/app.js","utf8");
+const api=fs.readFileSync("public/js/api/client.js","utf8");
+const events=fs.readFileSync("public/js/api/events.js","utf8");
+const summary=fs.readFileSync("public/js/components/summary.js","utf8");
+const activity=fs.readFileSync("public/js/components/activity.js","utf8");
+const charts=fs.readFileSync("public/js/components/charts.js","utf8");
+const health=fs.readFileSync("public/js/components/health.js","utf8");
+const modal=fs.readFileSync("public/js/components/task-modal.js","utf8");
+check("dashboard HTML externalized",index.includes("/css/app.css")&&index.includes('/js/app.js'));
+check("dashboard uses ES modules",index.includes('type="module"'));
+check("inline dashboard script removed",!index.includes("async function load()"));
+check("API client module exists",api.includes('dashboard:()=>request("/api/dashboard")'));
+check("task control API prepared",api.includes("pauseTask")&&api.includes("resumeTask")&&api.includes("cancelTask"));
+check("SSE module exists",events.includes('new EventSource("/api/events")'));
+check("SSE connection state handled",events.includes("source.onopen")&&events.includes("source.onerror")&&events.includes("scheduleReconnect"));
+check("summary component exists",summary.includes("renderWorkers")&&summary.includes("renderProjects"));
+check("task component exists",activity.includes("renderTasks"));
+check("event component exists",activity.includes("prependEvent"));
+check("chart component exists",charts.includes("cpuChart")&&charts.includes("memoryChart"));
+check("runtime health component exists",health.includes("renderSystem"));
+check("task creation component exists",modal.includes("setupTaskModal"));
+check("dashboard state module integrated",app.includes("setState"));
+check("periodic fallback refresh exists",app.includes("setInterval"));
+check("responsive dashboard CSS exists",css.includes("@media(max-width:1100px)"));
+check("runtime health UI exists",index.includes("Runtime Health"));
+check("task operations UI exists",index.includes("Task Operations"));
+check("provider circuit UI exists",index.includes("AI Circuits"));
+check("paused task statistic exists",index.includes('id="paused"'));
+console.log("\n============================================================");
+console.log(" VEYLITH v0.9 BATCH 5 PASS 1 DASHBOARD FOUNDATION");
+console.log("============================================================");
+let passed=0;
+for(const [name,ok] of checks){console.log(`${ok?"PASS":"FAIL"} ${name}`);if(ok)passed++}
+console.log(`\nPassed: ${passed}`);
+console.log(`Failed: ${checks.length-passed}`);
+console.log(`Total:  ${checks.length}`);
+process.exitCode=passed===checks.length?0:1;
+

@@ -4,10 +4,11 @@ import {event,setWorker} from "../core/telemetry.js";
 import {executeTask,failTask} from "../core/task.service.js";
 import {TaskControlError,assertTaskRunnable} from "../core/task-control.service.js";
 import {cancelTaskSandboxes} from "../sandbox/sandbox-manager.service.js";
-import {claimNextJob,completeJob,heartbeatJob,pauseJob,requeueJob,failJob,getJob} from "./job.repository.js";
+import {claimNextJob,completeJob,heartbeatJob,pauseJob,requeueJob,failJob,getJob,consumeJobAttempt} from "./job.repository.js";
 import {occupyWorkerSlot,pulseWorkerSlot,freeWorkerSlot} from "../workers/worker-slot.service.js";
 import {runtimeOwner,RUNTIME_ID} from "../runtime/runtime-instance.service.js";
 import {logger} from "../logging/logger.service.js";
+import {classifyJobFailure} from "./job-failure-classifier.service.js";
 
 const activeSlots=new Set<number>();
 const controls=new Map<string,{cancelled:boolean;paused:boolean}>();
@@ -177,40 +178,43 @@ export async function runJobSlot(slot:number){
    "SELECT * FROM tasks WHERE id=?"
   ).get(job.task_id) as any;
 
-  if(
-   error instanceof TaskControlError||
-   currentTask?.status==="cancelled"||
-   currentTask?.status==="paused"
-  ){
-   const action=
-    currentTask?.status==="cancelled"||
-    error instanceof TaskControlError&&error.action==="cancel"
-     ?"cancel"
-     :"pause";
+  const classification=classifyJobFailure(error,currentTask);
+  const message=errorMessage(error);
+
+  if(classification.cancel||classification.pause){
+   const action=classification.cancel?"cancel":"pause";
 
    await cancelTaskSandboxes(job.task_id,action);
 
    event(
-    `job.${action}led`,
-    action==="cancel"
+    classification.cancel?"job.cancelled":"job.paused",
+    classification.cancel
      ?"Running job cancelled with process containment"
      :"Running job paused with process containment",
     {
      jobId:job.id,
      taskId:job.task_id,
      projectId:job.project_id,
-     phase:action==="cancel"?"cancelled":"paused",
+     phase:classification.cancel?"cancelled":"paused",
      component:"job-runner",
      level:"warn",
      data:{
       slot,
       owner,
+      failureKind:classification.kind,
       durationMs:Date.now()-started
      }
     }
    );
   }else{
-   const message=errorMessage(error);
+   let currentJob=getJob(job.id)||job;
+
+   if(classification.consumeAttempt){
+    currentJob=
+     consumeJobAttempt(job.id,owner)||
+     getJob(job.id)||
+     job;
+   }
 
    if(currentTask){
     try{
@@ -225,7 +229,10 @@ export async function runJobSlot(slot:number){
        projectId:job.project_id,
        component:"job-runner",
        level:"error",
-       data:{slot}
+       data:{
+        slot,
+        failureKind:classification.kind
+       }
       }
      );
     }
@@ -235,10 +242,91 @@ export async function runJobSlot(slot:number){
     "SELECT * FROM tasks WHERE id=?"
    ).get(job.task_id) as any;
 
-   if(current?.status==="paused"){
+   currentJob=getJob(job.id)||currentJob;
+
+   const exhausted=
+    currentJob.attempts>=currentJob.max_attempts;
+
+   if(
+    classification.kind==="provider_retryable"||
+    current?.status==="paused"
+   ){
     pauseJob(job.id,message);
+
+    event(
+     "job.provider_wait",
+     `Job ${job.id} paused while waiting for provider`,
+     {
+      jobId:job.id,
+      taskId:job.task_id,
+      projectId:job.project_id,
+      phase:"waiting_ai",
+      component:"job-runner",
+      level:"warn",
+      data:{
+       slot,
+       failureKind:classification.kind,
+       attempt:currentJob.attempts,
+       maxAttempts:currentJob.max_attempts
+      }
+     }
+    );
+   }else if(
+    classification.kind==="provider_permanent"||
+    classification.terminal||
+    exhausted
+   ){
+    const terminalMessage=exhausted
+     ?`${message}; maximum execution attempts reached`
+     :message;
+
+    failJob(job.id,terminalMessage);
+
+    if(current?.status!=="failed"){
+     const time=new Date().toISOString();
+
+     db.prepare(`
+      UPDATE tasks
+      SET status='failed',phase='failed',error=?,updated_at=?
+      WHERE id=?
+     `).run(
+      terminalMessage,
+      time,
+      job.task_id
+     );
+
+     db.prepare(`
+      UPDATE projects
+      SET status='failed',phase='failed',updated_at=?
+      WHERE id=?
+     `).run(
+      time,
+      job.project_id
+     );
+    }
+
+    event(
+     exhausted
+      ?"job.attempt_exhausted"
+      :"job.terminal_failure",
+     terminalMessage,
+     {
+      jobId:job.id,
+      taskId:job.task_id,
+      projectId:job.project_id,
+      phase:"failed",
+      component:"job-runner",
+      level:"error",
+      data:{
+       slot,
+       failureKind:classification.kind,
+       attempt:currentJob.attempts,
+       maxAttempts:currentJob.max_attempts
+      }
+     }
+    );
    }else if(current?.status==="queued"){
-    const delay=retryDelay(job.attempts);
+    const delay=retryDelay(currentJob.attempts);
 
     requeueJob(job.id,delay,message);
 
@@ -255,7 +343,9 @@ export async function runJobSlot(slot:number){
       data:{
        slot,
        delay,
-       attempt:job.attempts
+       failureKind:classification.kind,
+       attempt:currentJob.attempts,
+       maxAttempts:currentJob.max_attempts
       }
      }
     );
@@ -269,6 +359,7 @@ export async function runJobSlot(slot:number){
     {
      slot,
      owner,
+     failureKind:classification.kind,
      durationMs:Date.now()-started
     },
     error
@@ -281,12 +372,18 @@ export async function runJobSlot(slot:number){
      jobId:job.id,
      taskId:job.task_id,
      projectId:job.project_id,
-     phase:"failed",
+     phase:
+      classification.kind==="provider_retryable"
+       ?"waiting_ai"
+       :"failed",
      component:"job-runner",
      level:"error",
      data:{
       slot,
       owner,
+      failureKind:classification.kind,
+      attempt:currentJob.attempts,
+      maxAttempts:currentJob.max_attempts,
       durationMs:Date.now()-started
      }
     }
@@ -319,3 +416,6 @@ export function activeJobSlots(){
 export function activeJobCount(){
  return activeSlots.size;
 }
+
+
+

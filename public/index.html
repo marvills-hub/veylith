@@ -4,53 +4,159 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Veylith Control Center</title>
+<link rel="stylesheet" href="/css/app.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<style>
-*{box-sizing:border-box}body{margin:0;background:#050505;color:#eee;font-family:Inter,Arial,sans-serif}button,input,textarea{font:inherit}.app{min-height:100vh;background:radial-gradient(circle at 70% -10%,#280000 0,transparent 32%),#050505}.topbar{height:72px;border-bottom:1px solid #291010;display:flex;align-items:center;justify-content:space-between;padding:0 28px;background:#090909}.brand{font-weight:900;letter-spacing:6px;font-size:22px}.brand span{color:#ef2020}.online{display:flex;align-items:center;gap:9px;color:#aaa;font-size:12px;letter-spacing:2px}.dot{width:8px;height:8px;border-radius:50%;background:#e52222;box-shadow:0 0 12px #e52222}.layout{display:grid;grid-template-columns:210px 1fr}.sidebar{border-right:1px solid #211010;padding:22px 14px;min-height:calc(100vh - 72px);background:#090909}.nav{padding:12px 14px;border-radius:6px;color:#777;margin-bottom:4px;font-size:13px}.nav.active{background:#1a0b0b;color:#ff3b3b;border-left:2px solid #e52222}.content{padding:22px;min-width:0}.headline{display:flex;justify-content:space-between;align-items:end;margin-bottom:18px}.headline h1{margin:0;font-size:21px}.headline p{margin:5px 0 0;color:#666;font-size:12px}.actions{display:flex;gap:8px}.btn{border:1px solid #541414;background:#160909;color:#ff4c4c;padding:10px 14px;border-radius:6px;cursor:pointer}.btn.primary{background:#d71919;color:#fff;border-color:#d71919}.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:10px}.stat,.panel{background:#0d0d0d;border:1px solid #211111;border-radius:8px}.stat{padding:14px}.stat-label{color:#666;font-size:10px;text-transform:uppercase;letter-spacing:1.5px}.stat-value{font-size:25px;font-weight:800;margin-top:7px}.stat-value.red{color:#ff3232}.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px}.panel{padding:15px;min-width:0}.span4{grid-column:span 4}.span5{grid-column:span 5}.span7{grid-column:span 7}.span8{grid-column:span 8}.span12{grid-column:span 12}.panel-title{font-size:11px;letter-spacing:1.4px;color:#888;text-transform:uppercase;margin-bottom:13px;display:flex;justify-content:space-between}.chart{height:190px}.projects{max-height:245px;overflow:auto}.project{padding:10px 0;border-bottom:1px solid #181818}.project-head{display:flex;justify-content:space-between;font-size:12px}.muted{color:#666}.bar{height:4px;background:#1c1c1c;margin-top:8px;border-radius:4px;overflow:hidden}.bar>div{height:100%;background:#d71d1d;box-shadow:0 0 8px #8b1111}.feed{height:280px;overflow:auto;font-family:Consolas,monospace;font-size:11px}.event{display:grid;grid-template-columns:75px 130px 1fr;gap:8px;padding:6px 0;border-bottom:1px solid #151515}.event-time{color:#555}.event-type{color:#e52b2b}.event.error .event-type{color:#ff2020;font-weight:700}.event.warn .event-type{color:#d98728}.worker{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #181818;font-size:12px}.worker-state{color:#ff3434}.terminal{height:180px;overflow:auto;background:#070707;padding:10px;border-radius:5px;font:11px Consolas,monospace;color:#aaa;white-space:pre-wrap}.modal{display:none;position:fixed;inset:0;background:#000b;align-items:center;justify-content:center}.modal.open{display:flex}.dialog{width:min(560px,90vw);background:#0d0d0d;border:1px solid #401414;padding:20px;border-radius:9px}.dialog h2{margin-top:0}.field{width:100%;background:#080808;border:1px solid #292929;color:#eee;border-radius:5px;padding:11px;margin-bottom:10px;outline:none}.field:focus{border-color:#b51d1d}.dialog textarea{height:130px;resize:vertical}.dialog-actions{display:flex;justify-content:flex-end;gap:8px}@media(max-width:1050px){.layout{grid-template-columns:1fr}.sidebar{display:none}.stats{grid-template-columns:repeat(2,1fr)}.span4,.span5,.span7,.span8{grid-column:span 12}}@media(max-width:600px){.stats{grid-template-columns:1fr}.content{padding:12px}.topbar{padding:0 14px}.headline{align-items:flex-start;gap:12px;flex-direction:column}}
-</style>
 </head>
 <body>
 <div class="app">
 <header class="topbar">
 <div class="brand">VEY<span>LITH</span></div>
-<div class="online"><span class="dot"></span><span id="systemStatus">CONNECTING</span></div>
+<div class="connection"><span class="status-dot" id="systemDot"></span><span id="systemStatus">CONNECTING</span></div>
 </header>
 <div class="layout">
 <aside class="sidebar">
+<div class="nav-title">CONTROL CENTER</div>
 <div class="nav active">Overview</div>
 <div class="nav">Workers</div>
 <div class="nav">Projects</div>
 <div class="nav">Tasks</div>
 <div class="nav">Activity</div>
-<div class="nav">Analytics</div>
-<div class="nav">Git</div>
-<div class="nav">Errors</div>
-<div class="nav">Resources</div>
+<div class="nav-title">OPERATIONS</div>
+<div class="nav">AI Providers</div>
+<div class="nav">Git / GitHub</div>
+<div class="nav">Security</div>
+<div class="nav">Logs</div>
 </aside>
 <main class="content">
 <div class="headline">
-<div><h1>System Overview</h1><p>Live autonomous development telemetry</p></div>
-<div class="actions">
-<button class="btn" id="demo">Run First Task</button>
-<button class="btn primary" id="newTask">+ Development Task</button>
-</div>
+<div><h1>System Overview</h1><p>Live autonomous development control center</p></div>
+<div class="actions"><button class="btn" id="demo">RUN DEMO</button><button class="btn primary" id="newTask">+ DEVELOPMENT TASK</button></div>
 </div>
 <section class="stats">
 <div class="stat"><div class="stat-label">Workers</div><div class="stat-value red" id="workersCount">0</div></div>
 <div class="stat"><div class="stat-label">Running</div><div class="stat-value" id="running">0</div></div>
 <div class="stat"><div class="stat-label">Queued</div><div class="stat-value" id="queued">0</div></div>
+<div class="stat"><div class="stat-label">Paused</div><div class="stat-value" id="paused">0</div></div>
 <div class="stat"><div class="stat-label">Completed</div><div class="stat-value" id="completed">0</div></div>
 <div class="stat"><div class="stat-label">Failed</div><div class="stat-value" id="failed">0</div></div>
 </section>
 <section class="grid">
-<div class="panel span4"><div class="panel-title"><span>CPU Load</span><span id="cpuText">0%</span></div><div class="chart"><canvas id="cpuChart"></canvas></div></div>
-<div class="panel span4"><div class="panel-title"><span>Memory</span><span id="memoryText">0%</span></div><div class="chart"><canvas id="memoryChart"></canvas></div></div>
-<div class="panel span4"><div class="panel-title"><span>Task Queue</span><span>LIVE</span></div><div class="chart"><canvas id="taskChart"></canvas></div></div>
-<div class="panel span7"><div class="panel-title"><span>System Activity</span><span id="uptime">UPTIME 0s</span></div><div class="chart"><canvas id="activityChart"></canvas></div></div>
-<div class="panel span5"><div class="panel-title"><span>Project Progress</span><span id="projectCount">0 PROJECTS</span></div><div class="projects" id="projects"></div></div>
-<div class="panel span4"><div class="panel-title"><span>Workers</span><span>HEARTBEAT</span></div><div id="workers"></div></div>
-<div class="panel span8"><div class="panel-title"><span>Live Veylith Activity</span><span>EVENT STREAM</span></div><div class="feed" id="feed"></div></div>
-<div class="panel span12"><div class="panel-title"><span>Execution Stream</span><span>TERMINAL</span></div><div class="terminal" id="terminal">Waiting for Veylith...</div></div>
+<div class="panel span12">
+<div class="panel-title"><span>Autonomous Development Team</span><span id="teamProject">NO ACTIVE PROJECT</span></div>
+<div id="currentAgent"></div>
+<div class="team-layout">
+<div>
+<div class="sub-title">AI DEVELOPERS</div>
+<div class="agent-team" id="agentTeam"></div>
+</div>
+<div>
+<div class="sub-title">DEVELOPMENT PIPELINE</div>
+<div class="pipeline" id="pipeline"></div>
+</div>
+</div>
+</div>
+<div class="panel span12">
+<div class="panel-title"><span>Runtime Health</span><span>LIVE</span></div>
+<div class="health-grid">
+<div class="health-card"><div class="health-label">AI Provider</div><div class="health-value" id="aiState">LOADING</div></div>
+<div class="health-card"><div class="health-label">Sandbox</div><div class="health-value" id="sandboxState">LOADING</div></div>
+<div class="health-card"><div class="health-label">Security</div><div class="health-value" id="securityState">LOADING</div></div>
+<div class="health-card"><div class="health-label">Queue</div><div class="health-value" id="queueState">LOADING</div></div>
+</div>
+</div>
+<div class="panel span3"><div class="panel-title"><span>CPU Load</span><span id="cpuText">0%</span></div><div class="chart"><canvas id="cpuChart"></canvas></div></div>
+<div class="panel span3"><div class="panel-title"><span>Memory</span><span id="memoryText">0%</span></div><div class="chart"><canvas id="memoryChart"></canvas></div></div>
+<div class="panel span3"><div class="panel-title"><span>Workers</span><span id="workerCount">0 SLOTS</span></div><div class="workers" id="workers"></div></div>
+<div class="panel span3"><div class="panel-title"><span>AI Circuits</span><span>PROVIDERS</span></div><div id="circuits"></div></div>
+<div class="panel span5"><div class="panel-title"><span>Projects</span><span id="projectCount">0 PROJECTS</span></div><div class="projects" id="projects"></div></div>
+<div class="panel span7"><div class="panel-title"><span>Task Operations</span><span id="taskCount">0 TASKS</span></div><div class="task-list" id="taskList"></div></div>
+<div class="panel span8"><div class="panel-title"><span>Live Veylith Activity</span><span id="eventCount">EVENT STREAM</span></div><div class="feed" id="feed"></div></div>
+<div class="panel span4"><div class="panel-title"><span>Execution Stream</span><span>TERMINAL</span></div><div class="terminal" id="terminal">Waiting for Veylith...</div></div>
+<div class="panel span12" id="connectionHealth">
+<div class="panel-title">
+<span>Runtime Connection</span>
+<span class="connection-badge offline" id="connectionBadge">OFFLINE</span>
+</div>
+<div class="connection-overview">
+<div class="connection-main">
+<div class="connection-pulse"><span></span></div>
+<div>
+<strong id="connectionText">CONNECTING TO VEYLITH</strong>
+<span id="connectionDetail">LAST API RESPONSE NEVER</span>
+</div>
+</div>
+<div class="connection-legend">
+<span><i class="live"></i>LIVE</span>
+<span><i class="reconnecting"></i>RECONNECTING</span>
+<span><i class="stale"></i>STALE</span>
+<span><i class="offline"></i>OFFLINE</span>
+</div>
+</div>
+<div class="sub-title">WORKER HEARTBEATS</div>
+<div class="connection-workers" id="connectionWorkers">
+<div class="empty">Waiting for worker heartbeat data.</div>
+</div>
+</div>
+<div class="panel span12" id="publicationCenter">
+<div class="panel-title">
+<span>Git / GitHub Publication</span>
+<span id="publicationProject">NO PUBLICATION</span>
+</div>
+<div id="publicationState"></div>
+<div class="publication-layout">
+<div>
+<div class="sub-title">PUBLICATION PIPELINE</div>
+<div class="publication-pipeline" id="publicationPipeline"></div>
+</div>
+<div>
+<div class="sub-title">REPOSITORY STATE</div>
+<div class="publication-meta" id="publicationMeta"></div>
+</div>
+</div>
+<div class="error-box publication-error" id="publicationError"></div>
+</div>
+<div class="panel span12" id="operationsCenter">
+<div class="panel-title">
+<span>Operations Center</span>
+<button class="mini-btn" id="opsRefresh">REFRESH</button>
+</div>
+<div class="operations-summary">
+<div class="ops-card"><span>Logs</span><strong id="logTotal">0</strong></div>
+<div class="ops-card"><span>Warnings</span><strong class="warn" id="logWarnings">0</strong></div>
+<div class="ops-card"><span>Errors</span><strong class="bad" id="logErrors">0</strong></div>
+<div class="ops-card"><span>Security</span><strong class="ops-value" id="securityMode">LOADING</strong></div>
+<div class="ops-card"><span>Sandbox</span><strong class="ops-value" id="sandboxMode">LOADING</strong></div>
+<div class="ops-card"><span>Isolation</span><strong class="ops-value" id="isolationMode">LOADING</strong></div>
+<div class="ops-card"><span>AI Provider</span><strong class="ops-value" id="activeProvider">LOADING</strong></div>
+<div class="ops-card"><span>Model</span><strong class="ops-value" id="activeModel">LOADING</strong></div>
+</div>
+<div class="operations-grid">
+<div class="operations-block">
+<div class="operations-head">
+<span>STRUCTURED LOGS</span>
+<select id="logLevel">
+<option value="">ALL LEVELS</option>
+<option value="debug">DEBUG</option>
+<option value="info">INFO</option>
+<option value="warn">WARN</option>
+<option value="error">ERROR</option>
+<option value="fatal">FATAL</option>
+</select>
+</div>
+<div class="ops-logs" id="opsLogs"><div class="empty">Loading logs...</div></div>
+</div>
+<div class="operations-side">
+<div class="operations-block">
+<div class="operations-head"><span>AI PROVIDERS</span></div>
+<div id="providerList"><div class="empty">Loading providers...</div></div>
+</div>
+<div class="operations-block">
+<div class="operations-head"><span>SECURITY EVENTS</span></div>
+<div class="security-events" id="securityEvents"><div class="empty">Loading security events...</div></div>
+</div>
+</div>
+</div>
+</div>
 </section>
 </main>
 </div>
@@ -60,242 +166,57 @@
 <h2>Create Development Task</h2>
 <input class="field" id="name" placeholder="Project name" required>
 <textarea class="field" id="prompt" placeholder="Describe what Veylith should build..." required></textarea>
-<div class="dialog-actions">
-<button type="button" class="btn" id="cancel">Cancel</button>
-<button class="btn primary">Queue Task</button>
-</div>
+<div class="dialog-actions"><button type="button" class="btn" id="cancel">CANCEL</button><button class="btn primary" id="submitTask">QUEUE TASK</button></div>
 </form>
 </div>
-<script>
-const $=id=>document.getElementById(id);
-const red="#e32222",grid="#1c1c1c",text="#555";
-Chart.defaults.color=text;
-Chart.defaults.borderColor=grid;
-Chart.defaults.font.family="Inter,Arial";
-
-const line=(el,label)=>new Chart($(el),{
-type:"line",
-data:{labels:[],datasets:[{label,data:[],borderColor:red,backgroundColor:"#e3222218",fill:true,tension:.35,pointRadius:0,borderWidth:1.5}]},
-options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{beginAtZero:true,grid:{color:grid},ticks:{color:text}}}}
-});
-
-const cpu=line("cpuChart","CPU");
-const memory=line("memoryChart","Memory");
-
-const activity=new Chart($("activityChart"),{
-type:"line",
-data:{labels:[],datasets:[
-{label:"Running",data:[],borderColor:red,tension:.35,pointRadius:0},
-{label:"Queued",data:[],borderColor:"#6d2222",tension:.35,pointRadius:0}
-]},
-options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{labels:{boxWidth:8}}},scales:{x:{display:false},y:{beginAtZero:true,ticks:{precision:0}}}}
-});
-
-const tasks=new Chart($("taskChart"),{
-type:"doughnut",
-data:{labels:["Completed","Running","Queued","Failed"],datasets:[{data:[0,0,0,0],backgroundColor:["#8c1717","#e32222","#441414","#ff5555"],borderColor:"#0d0d0d",borderWidth:3}]},
-options:{responsive:true,maintainAspectRatio:false,cutout:"72%",plugins:{legend:{position:"bottom",labels:{boxWidth:8}}}}
-});
-
-function push(chart,label,value,max=40){
-chart.data.labels.push(label);
-chart.data.datasets[0].data.push(value);
-if(chart.data.labels.length>max){
-chart.data.labels.shift();
-chart.data.datasets[0].data.shift();
-}
-chart.update("none");
-}
-
-function duration(s){
-if(!s)return"0s";
-const h=Math.floor(s/3600);
-const m=Math.floor(s%3600/60);
-const x=s%60;
-return`${h?h+"h ":""}${m?m+"m ":""}${x}s`;
-}
-
-function escapeHtml(v){
-const d=document.createElement("div");
-d.textContent=v??"";
-return d.innerHTML;
-}
-
-function renderProjects(items){
-$("projectCount").textContent=`${items.length} PROJECTS`;
-$("projects").innerHTML=items.length?items.map(p=>`
-<div class="project">
-<div class="project-head">
-<span>${escapeHtml(p.name)}</span>
-<span class="muted">${p.progress}% · ${p.status}</span>
+<div class="control-overlay" id="taskControl">
+<div class="control-panel">
+<div class="control-head">
+<div>
+<h2 id="controlTaskName">Task</h2>
+<div class="control-id" id="controlTaskId"></div>
 </div>
-<div class="bar"><div style="width:${p.progress}%"></div></div>
-</div>`).join(""):`<div class="muted">No projects yet.</div>`;
-}
-
-function renderWorkers(items){
-$("workersCount").textContent=items.length;
-$("workers").innerHTML=items.map(w=>`
-<div class="worker">
-<div><b>${escapeHtml(w.id)}</b><div class="muted">${escapeHtml(w.phase)}</div></div>
-<span class="worker-state">● ${w.status.toUpperCase()}</span>
-</div>`).join("");
-}
-
-function renderEvents(items){
-$("feed").innerHTML=items.slice().reverse().map(e=>`
-<div class="event ${e.level}">
-<span class="event-time">${new Date(e.created_at).toLocaleTimeString()}</span>
-<span class="event-type">${escapeHtml(e.type)}</span>
-<span>${escapeHtml(e.message)}</span>
-</div>`).join("");
-}
-
-function applyMetric(m){
-const label=new Date(m.created_at).toLocaleTimeString();
-
-push(cpu,label,m.cpu);
-push(memory,label,m.memory);
-
-$("cpuText").textContent=`${m.cpu}%`;
-$("memoryText").textContent=`${m.memory}%`;
-$("uptime").textContent=`UPTIME ${duration(m.uptime)}`;
-
-activity.data.labels.push(label);
-activity.data.datasets[0].data.push(m.active_tasks);
-activity.data.datasets[1].data.push(m.queued_tasks);
-
-if(activity.data.labels.length>40){
-activity.data.labels.shift();
-activity.data.datasets.forEach(x=>x.data.shift());
-}
-
-activity.update("none");
-
-tasks.data.datasets[0].data=[
-m.completed_tasks,
-m.active_tasks,
-m.queued_tasks,
-m.failed_tasks
-];
-
-tasks.update("none");
-}
-
-async function load(){
-const d=await fetch("/api/dashboard").then(r=>r.json());
-
-$("systemStatus").textContent="SYSTEM ONLINE";
-
-renderWorkers(d.workers);
-renderProjects(d.projects);
-renderEvents(d.events);
-
-$("running").textContent=d.stats.running||0;
-$("queued").textContent=d.stats.queued||0;
-$("completed").textContent=d.stats.completed||0;
-$("failed").textContent=d.stats.failed||0;
-
-d.metrics.forEach(applyMetric);
-}
-
-async function loadSummary(){
-const d=await fetch("/api/dashboard").then(r=>r.json());
-
-renderWorkers(d.workers);
-renderProjects(d.projects);
-
-$("running").textContent=d.stats.running||0;
-$("queued").textContent=d.stats.queued||0;
-$("completed").textContent=d.stats.completed||0;
-$("failed").textContent=d.stats.failed||0;
-}
-
-const stream=new EventSource("/api/events");
-
-stream.onopen=()=>{
-$("systemStatus").textContent="SYSTEM ONLINE";
-};
-
-stream.onerror=()=>{
-$("systemStatus").textContent="RECONNECTING";
-};
-
-stream.onmessage=e=>{
-const m=JSON.parse(e.data);
-
-if(m.channel==="metric"){
-applyMetric(m.payload);
-$("running").textContent=m.payload.active_tasks;
-$("queued").textContent=m.payload.queued_tasks;
-$("completed").textContent=m.payload.completed_tasks;
-$("failed").textContent=m.payload.failed_tasks;
-}
-
-if(m.channel==="terminal"){
-$("terminal").textContent+=`\n${m.payload.text}`;
-$("terminal").scrollTop=$("terminal").scrollHeight;
-}
-
-if(m.channel==="event"){
-const x=m.payload;
-const div=document.createElement("div");
-
-div.className=`event ${x.level}`;
-
-div.innerHTML=`
-<span class="event-time">${new Date(x.created_at).toLocaleTimeString()}</span>
-<span class="event-type">${escapeHtml(x.type)}</span>
-<span>${escapeHtml(x.message)}</span>`;
-
-$("feed").prepend(div);
-
-while($("feed").children.length>100){
-$("feed").lastChild.remove();
-}
-
-loadSummary();
-}
-
-if(m.channel==="worker"){
-loadSummary();
-}
-};
-
-$("newTask").onclick=()=>{
-$("modal").classList.add("open");
-$("name").focus();
-};
-
-$("cancel").onclick=()=>{
-$("modal").classList.remove("open");
-};
-
-$("taskForm").onsubmit=async e=>{
-e.preventDefault();
-
-await fetch("/api/tasks",{
-method:"POST",
-headers:{"Content-Type":"application/json"},
-body:JSON.stringify({
-name:$("name").value,
-prompt:$("prompt").value
-})
-});
-
-$("modal").classList.remove("open");
-$("taskForm").reset();
-
-loadSummary();
-};
-
-$("demo").onclick=async()=>{
-await fetch("/api/demo",{method:"POST"});
-$("terminal").textContent="First autonomous task queued...\n";
-loadSummary();
-};
-
-load();
-</script>
+<button class="close-control" id="closeTaskControl">×</button>
+</div>
+<div class="control-status">
+<span class="status large" id="controlStatus">UNKNOWN</span>
+<strong id="controlProgressText">0%</strong>
+</div>
+<div class="control-progress">
+<div class="progress"><span id="controlProgressBar" style="width:0%"></span></div>
+</div>
+<div class="control-grid">
+<div class="control-card"><div class="control-label">Current Phase</div><div class="control-value" id="controlPhase">—</div></div>
+<div class="control-card"><div class="control-label">Worker</div><div class="control-value" id="controlWorker">—</div></div>
+<div class="control-card"><div class="control-label">Job</div><div class="control-value" id="controlJob">—</div></div>
+<div class="control-card"><div class="control-label">Attempts</div><div class="control-value" id="controlAttempts">0</div></div>
+<div class="control-card"><div class="control-label">Repairs</div><div class="control-value" id="controlRepairs">0</div></div>
+</div>
+<div class="error-box" id="controlErrorBox"><span id="controlError"></span></div>
+<div class="control-section">
+<div class="control-section-title">Execution Controls</div>
+<div class="control-buttons">
+<button class="btn" id="pauseTask">PAUSE</button>
+<button class="btn success" id="resumeTask">RESUME</button>
+<button class="btn danger" id="cancelTask">CANCEL</button>
+</div>
+</div>
+<div class="control-section">
+<div class="control-section-title">Priority</div>
+<div class="priority-row">
+<input class="field" id="controlPriority" type="number" step="1">
+<button class="btn" id="applyPriority">APPLY</button>
+</div>
+</div>
+</div>
+</div>
+<script type="module" src="/js/app.js"></script>
 </body>
 </html>
+
+
+
+
+
+
+

@@ -1,4 +1,4 @@
-import express from "express";
+﻿import express from "express";
 import {requestLogging} from "../logging/request-logging.middleware.js";
 import {queryLogs,logStats} from "../logging/log-query.service.js";
 import {logFiles,logStorageStatus} from "../logging/log-storage.service.js";
@@ -17,6 +17,8 @@ import {listJobs,queueStats} from "../jobs/job.repository.js";
 import {cancelTaskJob,pauseTask,changeTaskPriority,scheduleTask} from "../jobs/job.service.js";
 import {sandboxStatus} from "../sandbox/sandbox-manager.service.js";
 import {securityStatus,securityEvents} from "../security/security-status.service.js";
+import {activeProjectTeams,projectTeam} from "../dashboard/autonomous-team.service.js";
+import {publicationForProject,publicationOverview} from "../dashboard/publication-monitor.service.js";
 
 const DEMO_PROMPT="[VEYLITH_DEMO] Create and test the autonomous Veylith hello API.";
 
@@ -53,6 +55,9 @@ export function createApp(){
    const tasks=db.prepare("SELECT * FROM tasks ORDER BY created_at DESC LIMIT 100").all();
    const events=db.prepare("SELECT * FROM events ORDER BY id DESC LIMIT 150").all().reverse();
    const metrics=db.prepare("SELECT * FROM metrics ORDER BY id DESC LIMIT 120").all().reverse();
+    const developmentSteps=db.prepare("SELECT * FROM development_steps ORDER BY created_at DESC LIMIT 300").all().reverse();
+    const autonomousTeams=activeProjectTeams(20);
+    const publications=publicationOverview(50);
    const stats=db.prepare(`SELECT COUNT(*) total,SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END) queued,SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) running,SUM(CASE WHEN status='paused' THEN 1 ELSE 0 END) paused,SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) completed,SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) failed,SUM(repair_attempts) repairs FROM tasks`).get();
    const [sandbox,security]=await Promise.all([sandboxStatus(),securityStatus()]);
    res.json({
@@ -71,6 +76,9 @@ export function createApp(){
     queue:queueStats(),
     events,
     metrics,
+    developmentSteps,
+    autonomousTeams,
+    publications,
     stats
    });
   }catch(error){
@@ -177,6 +185,27 @@ export function createApp(){
   catch(error){res.status(500).json({error:error instanceof Error?error.message:String(error)})}
  });
 
+ app.get("/api/projects/:id/publication",(req,res)=>{
+  try{
+   const publication=publicationForProject(req.params.id);
+   if(!publication){
+    res.status(404).json({error:"Project not found."});
+    return;
+   }
+   res.json(publication);
+  }catch(error){
+   res.status(500).json({error:error instanceof Error?error.message:String(error)});
+  }
+ });
+ app.get("/api/projects/:id/team",(req,res)=>{
+  try{
+   const team=projectTeam(req.params.id);
+   if(!team){res.status(404).json({error:"Project not found."});return}
+   res.json(team);
+  }catch(error){
+   res.status(500).json({error:error instanceof Error?error.message:String(error)});
+  }
+ });
  app.get("/api/projects/:id",(req,res)=>{
   const project=db.prepare("SELECT * FROM projects WHERE id=?").get(req.params.id);
   if(!project){res.status(404).json({error:"Project not found."});return}
@@ -213,6 +242,9 @@ export function createApp(){
  app.use((_req,res)=>res.sendFile(path.resolve("public/index.html")));
  return app;
 }
+
+
+
 
 
 

@@ -1,4 +1,4 @@
-﻿import {DatabaseSync} from "node:sqlite";
+import {DatabaseSync} from "node:sqlite";
 import {mkdir} from "node:fs/promises";
 import path from "node:path";
 import {DB_PATH,ROOT,now} from "../config/config.js";
@@ -148,6 +148,22 @@ CREATE TABLE IF NOT EXISTS worker_slots(
 );
 CREATE INDEX IF NOT EXISTS idx_worker_slots_worker ON worker_slots(worker_id,slot);
 CREATE INDEX IF NOT EXISTS idx_worker_slots_status ON worker_slots(status,heartbeat_at);
+CREATE TABLE IF NOT EXISTS git_publication_state(
+ project_id TEXT PRIMARY KEY,
+ stage TEXT NOT NULL DEFAULT 'none',
+ commit_sha TEXT,
+ branch TEXT,
+ github_owner TEXT,
+ github_repo TEXT,
+ github_url TEXT,
+ remote_url TEXT,
+ committed_at TEXT,
+ repository_ready_at TEXT,
+ pushed_at TEXT,
+ verified_at TEXT,
+ updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_git_publication_stage ON git_publication_state(stage,updated_at);
 CREATE TABLE IF NOT EXISTS provider_circuits(
 provider TEXT PRIMARY KEY,
 state TEXT NOT NULL DEFAULT 'closed',
@@ -196,6 +212,7 @@ export function memory(projectId:string,type:string,content:unknown){
 export function projectMemory(projectId:string){
  return db.prepare("SELECT type,content,created_at FROM project_memory WHERE project_id=? ORDER BY id DESC LIMIT 30").all(projectId);
 }
+
 
 
 

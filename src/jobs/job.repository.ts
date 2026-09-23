@@ -1,4 +1,4 @@
-﻿import {db} from "../database/database.js";
+import {db} from "../database/database.js";
 import {JOB_LEASE_MS,now} from "../config/config.js";
 import type {JobRecord,QueueStats} from "./job.types.js";
 
@@ -40,7 +40,7 @@ export function claimNextJob(workerId:string){
    return undefined;
   }
   const result=db.prepare(`
-   UPDATE jobs SET status='running',claimed_by=?,claimed_at=?,lease_expires_at=?,heartbeat_at=?,attempts=attempts+1,updated_at=?
+   UPDATE jobs SET status='running',claimed_by=?,claimed_at=?,lease_expires_at=?,heartbeat_at=?,updated_at=?
    WHERE id=? AND status IN ('queued','retry_wait') AND available_at<=?
   `).run(workerId,time,lease,time,time,candidate.id,time);
   if(Number(result.changes)!==1){
@@ -56,6 +56,16 @@ export function claimNextJob(workerId:string){
  }
 }
 
+
+export function consumeJobAttempt(jobId:string,workerId:string){
+ const time=now();
+ const result=db.prepare(`
+  UPDATE jobs
+  SET attempts=attempts+1,updated_at=?
+  WHERE id=? AND status='running' AND claimed_by=? AND attempts<max_attempts
+ `).run(time,jobId,workerId);
+ return Number(result.changes)===1?getJob(jobId):null;
+}
 export function heartbeatJob(jobId:string,workerId:string){
  const lease=new Date(Date.now()+JOB_LEASE_MS).toISOString(),time=now();
  const result=db.prepare("UPDATE jobs SET heartbeat_at=?,lease_expires_at=?,updated_at=? WHERE id=? AND status='running' AND claimed_by=?").run(time,lease,time,jobId,workerId);
@@ -133,18 +143,56 @@ export function recoverExpiredJobs(){
  const expired=db.prepare("SELECT * FROM jobs WHERE status='running' AND lease_expires_at IS NOT NULL AND lease_expires_at<=?").all(time) as unknown as JobRecord[];
  for(const item of expired){
   if(item.attempts>=item.max_attempts){
-   failJob(item.id,"Job lease expired and maximum attempts were reached.");
-   db.prepare("UPDATE tasks SET status='failed',phase='failed',error=?,updated_at=? WHERE id=?").run("Job lease expired and maximum attempts were reached.",time,item.task_id);
-   db.prepare("UPDATE projects SET status='failed',phase='failed',updated_at=? WHERE id=?").run(time,item.project_id);
+   const reason="Recovered expired worker lease after recorded failure exhausted maximum attempts";
+   db.prepare(`
+    UPDATE jobs
+    SET status='failed',
+        claimed_by=NULL,
+        claimed_at=NULL,
+        lease_expires_at=NULL,
+        heartbeat_at=NULL,
+        last_error=?,
+        completed_at=?,
+        updated_at=?
+    WHERE id=? AND status='running'
+   `).run(reason,time,time,item.id);
+   db.prepare(`
+    UPDATE tasks
+    SET status='failed',phase='failed',error=?,updated_at=?
+    WHERE id=?
+   `).run(reason,time,item.task_id);
+   db.prepare(`
+    UPDATE projects
+    SET status='failed',phase='failed',updated_at=?
+    WHERE id=?
+   `).run(time,item.project_id);
   }else{
-   db.prepare(`UPDATE jobs SET status='queued',available_at=?,claimed_by=NULL,claimed_at=NULL,lease_expires_at=NULL,heartbeat_at=NULL,last_error='Recovered expired worker lease',updated_at=? WHERE id=?`).run(time,time,item.id);
-   db.prepare("UPDATE tasks SET status='queued',phase='resuming',error=NULL,updated_at=? WHERE id=? AND status='running'").run(time,item.task_id);
-   db.prepare("UPDATE projects SET status='queued',phase='resuming',updated_at=? WHERE id=? AND status='active'").run(time,item.project_id);
+   db.prepare(`
+    UPDATE jobs
+    SET status='queued',
+        available_at=?,
+        claimed_by=NULL,
+        claimed_at=NULL,
+        lease_expires_at=NULL,
+        heartbeat_at=NULL,
+        last_error='Recovered expired worker lease',
+        updated_at=?
+    WHERE id=? AND status='running'
+   `).run(time,time,item.id);
+   db.prepare(`
+    UPDATE tasks
+    SET status='queued',phase='resuming',error=NULL,updated_at=?
+    WHERE id=? AND status='running'
+   `).run(time,item.task_id);
+   db.prepare(`
+    UPDATE projects
+    SET status='queued',phase='resuming',updated_at=?
+    WHERE id=? AND status='active'
+   `).run(time,item.project_id);
   }
  }
  return expired;
 }
-
 export function queueStats(){
  const time=now();
  return db.prepare(`
@@ -165,3 +213,9 @@ export function queueStats(){
 export function listJobs(limit=200){
  return db.prepare("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?").all(limit) as unknown as JobRecord[];
 }
+
+
+
+
+
+
