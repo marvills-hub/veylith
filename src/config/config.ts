@@ -1,0 +1,17 @@
+﻿import path from "node:path";
+import os from "node:os";
+export const VERSION="0.3.0";
+export const PORT=Number(process.env.PORT||7410);
+export const ROOT=path.resolve(process.env.WORKSPACE_ROOT||"./workspaces");
+export const DB_PATH=path.resolve(process.env.DATABASE_PATH||"./data/veylith.db");
+export const POLL=Number(process.env.WORKER_POLL_MS||2500);
+export const METRIC_INTERVAL=Number(process.env.METRIC_INTERVAL_MS||3000);
+export const MAX_REPAIR_ATTEMPTS=Number(process.env.MAX_REPAIR_ATTEMPTS||3);
+export const WORKER_ID=`veylith-${os.hostname().toLowerCase().replace(/[^a-z0-9-]/g,"-")}`;
+export const AI_KEY=process.env.OPENAI_API_KEY?.trim()||"";
+export const AI_MODEL=process.env.OPENAI_MODEL||"gpt-5.6";
+export const GITHUB_TOKEN=process.env.GITHUB_TOKEN?.trim()||"";
+export const GITHUB_OWNER=process.env.GITHUB_OWNER?.trim()||"";
+export const GITHUB_VISIBILITY=(process.env.GITHUB_REPO_VISIBILITY==="public"?"public":"private") as "private"|"public";
+export const GITHUB_ENABLED=Boolean(GITHUB_TOKEN&&GITHUB_OWNER);
+export const now=()=>new Date().toISOString();

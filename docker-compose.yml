@@ -1,0 +1,12 @@
+﻿services:
+  veylith:
+    build: .
+    container_name: veylith
+    restart: unless-stopped
+    ports:
+      - "7410:7410"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./workspaces:/app/workspaces
