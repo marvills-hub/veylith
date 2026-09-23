@@ -1,24 +1,26 @@
 {
-  "name": "veylith",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts",
-    "build": "tsc",
-    "prod": "node dist/server.js"
-  },
-  "dependencies": {
-    "dotenv": "^17.2.2",
-    "express": "^5.1.0",
-    "simple-git": "^3.36.0",
-    "systeminformation": "^5.27.7"
-  },
-  "devDependencies": {
-    "@types/express": "^5.0.3",
-    "@types/node": "^24.5.2",
-    "tsx": "^4.20.5",
-    "typescript": "^5.9.2"
-  }
+    "name": "veylith",
+    "version": "0.8.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "tsx watch src/server.ts",
+        "start": "tsx src/server.ts",
+        "build": "tsc",
+        "prod": "node dist/server.js",
+        "test:security": "npm run build && node scripts/security-regression.mjs",
+        "test:intelligence": "npm run build && node scripts/v08-full-regression.mjs"
+    },
+    "dependencies": {
+        "dotenv": "^17.2.2",
+        "express": "^5.1.0",
+        "simple-git": "^3.36.0",
+        "systeminformation": "^5.27.7"
+    },
+    "devDependencies": {
+        "@types/express": "^5.0.3",
+        "@types/node": "^24.5.2",
+        "tsx": "^4.20.5",
+        "typescript": "^5.9.2"
+    }
 }

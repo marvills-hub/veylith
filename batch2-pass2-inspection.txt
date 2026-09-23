@@ -1,0 +1,789 @@
+================ JOB RUNNER ================
+import {JOB_HEARTBEAT_MS,JOB_RETRY_BASE_MS,WORKER_ID} from "../config/config.js";
+import {db} from "../database/database.js";
+import {event,setWorker} from "../core/telemetry.js";
+import {executeTask,failTask} from "../core/task.service.js";
+import {TaskControlError,assertTaskRunnable} from "../core/task-control.service.js";
+import {cancelTaskSandboxes} from "../sandbox/sandbox-manager.service.js";
+import {claimNextJob,completeJob,heartbeatJob,pauseJob,requeueJob,failJob,getJob} from "./job.repository.js";
+import {occupyWorkerSlot,pulseWorkerSlot,freeWorkerSlot} from "../workers/worker-slot.service.js";
+import {runtimeOwner} from "../runtime/runtime-instance.service.js";
+
+const activeSlots=new Set<number>();
+const controls=new Map<string,{cancelled:boolean;paused:boolean}>();
+
+function errorMessage(error:unknown){return error instanceof Error?error.message:String(error)}
+function retryDelay(attempts:number){return Math.min(300000,JOB_RETRY_BASE_MS*Math.pow(2,Math.max(0,attempts-1)))}
+
+export function requestRunningTaskControl(taskId:string,action:"cancel"|"pause"){
+ const state=controls.get(taskId)||{cancelled:false,paused:false};
+ if(action==="cancel")state.cancelled=true;
+ if(action==="pause")state.paused=true;
+ controls.set(taskId,state);
+ void cancelTaskSandboxes(taskId,action).then(result=>{
+  if(result.requested>0)event("sandbox.task_terminated",`${action} terminated ${result.terminated}/${result.requested} active sandbox process trees`,{
+   taskId,
+   level:"warn",
+   data:result
+  });
+ }).catch(error=>{
+  event("sandbox.termination_failed",errorMessage(error),{taskId,level:"error",data:{action}});
+ });
+}
+
+function assertControl(taskId:string){
+ const state=controls.get(taskId);
+ if(state?.cancelled)throw new TaskControlError("cancel","Task cancelled.");
+ if(state?.paused)throw new TaskControlError("pause","Task paused.");
+ assertTaskRunnable(taskId);
+}
+
+export async function runJobSlot(slot:number){
+ if(activeSlots.has(slot))return false;
+ const owner=runtimeOwner(slot);
+ const job=claimNextJob(owner);
+ if(!job)return false;
+ activeSlots.add(slot);
+ controls.set(job.task_id,{cancelled:false,paused:false});
+ occupyWorkerSlot(slot,job);
+ setWorker("busy","executing",job.task_id,job.project_id);
+ event("job.claimed",`Claimed ${job.id}`,{taskId:job.task_id,projectId:job.project_id,data:{jobId:job.id,slot,owner,attempt:job.attempts}});
+
+ const heartbeat=setInterval(()=>{
+  try{
+   const current=getJob(job.id);
+   if(!current||current.status!=="running")return;
+   heartbeatJob(job.id,owner);
+   pulseWorkerSlot(slot);
+  }catch{}
+ },JOB_HEARTBEAT_MS);
+ heartbeat.unref();
+
+ try{
+  assertControl(job.task_id);
+  const task=db.prepare("SELECT * FROM tasks WHERE id=?").get(job.task_id) as any;
+  if(!task)throw new Error(`Task ${job.task_id} not found.`);
+  await executeTask(task);
+  assertControl(job.task_id);
+  completeJob(job.id,owner);
+  event("job.completed",`Job ${job.id} completed`,{taskId:job.task_id,projectId:job.project_id,data:{jobId:job.id,slot,owner}});
+ }catch(error){
+  const currentTask=db.prepare("SELECT * FROM tasks WHERE id=?").get(job.task_id) as any;
+  if(error instanceof TaskControlError||currentTask?.status==="cancelled"||currentTask?.status==="paused"){
+   const action=currentTask?.status==="cancelled"||error instanceof TaskControlError&&error.action==="cancel"?"cancel":"pause";
+   await cancelTaskSandboxes(job.task_id,action);
+   event(`job.${action}led`,action==="cancel"?"Running job cancelled with process containment":"Running job paused with process containment",{
+    taskId:job.task_id,
+    projectId:job.project_id,
+    level:"warn",
+    data:{jobId:job.id,slot,owner}
+   });
+  }else{
+   const message=errorMessage(error);
+   if(currentTask){
+    try{
+     await failTask(currentTask,error);
+    }catch(failError){
+     event("job.failure_handler_error",errorMessage(failError),{taskId:job.task_id,projectId:job.project_id,level:"error",data:{jobId:job.id,slot}});
+    }
+   }
+   const current=db.prepare("SELECT * FROM tasks WHERE id=?").get(job.task_id) as any;
+   if(current?.status==="paused")pauseJob(job.id,message);
+   else if(current?.status==="queued"){
+    const delay=retryDelay(job.attempts);
+    requeueJob(job.id,delay,message);
+    event("job.retry_scheduled",`Job ${job.id} retry scheduled`,{
+     taskId:job.task_id,
+     projectId:job.project_id,
+     level:"warn",
+     data:{jobId:job.id,slot,delay,attempt:job.attempts}
+    });
+   }else failJob(job.id,message);
+   event("job.execution_error",message,{taskId:job.task_id,projectId:job.project_id,level:"error",data:{jobId:job.id,slot,owner}});
+  }
+ }finally{
+  clearInterval(heartbeat);
+  await cancelTaskSandboxes(job.task_id,"shutdown").catch(()=>{});
+  controls.delete(job.task_id);
+  activeSlots.delete(slot);
+  freeWorkerSlot(slot);
+  if(activeSlots.size===0)setWorker("online","idle");
+ }
+
+ return true;
+}
+
+export function activeJobSlots(){return [...activeSlots].sort((a,b)=>a-b)}
+export function activeJobCount(){return activeSlots.size}
+
+
+
+================ WORKER SERVICE ================
+import {dispatchWorkerPool} from "../workers/worker-pool.service.js";
+export async function workerLoop(){
+ return dispatchWorkerPool();
+}
+
+
+================ METRICS SERVICE ================
+import si from "systeminformation";
+import {db} from "../database/database.js";
+import {broadcast} from "../core/telemetry.js";
+import {now} from "../config/config.js";
+export async function collectMetrics(){
+ try{
+  const[load,mem]=await Promise.all([si.currentLoad(),si.mem()]);
+  const counts=db.prepare(`SELECT SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) active,SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END) queued,SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) completed,SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) failed FROM tasks`).get() as any;
+  const metric={cpu:Number(load.currentLoad.toFixed(2)),memory:Number(((mem.active/mem.total)*100).toFixed(2)),memory_used:mem.active,memory_total:mem.total,active_tasks:counts.active||0,queued_tasks:counts.queued||0,completed_tasks:counts.completed||0,failed_tasks:counts.failed||0,uptime:Math.floor(process.uptime()),created_at:now()};
+  db.prepare("INSERT INTO metrics(cpu,memory,memory_used,memory_total,active_tasks,queued_tasks,completed_tasks,failed_tasks,uptime,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)").run(metric.cpu,metric.memory,metric.memory_used,metric.memory_total,metric.active_tasks,metric.queued_tasks,metric.completed_tasks,metric.failed_tasks,metric.uptime,metric.created_at);
+  db.prepare("DELETE FROM metrics WHERE id NOT IN (SELECT id FROM metrics ORDER BY id DESC LIMIT 5000)").run();
+  broadcast("metric",metric);
+ }catch(error){console.error("Metrics:",error)}
+}
+
+
+================ ROUTES ================
+import express from "express";
+import {queryLogs,logStats} from "../logging/log-query.service.js";
+import {logFiles,logStorageStatus} from "../logging/log-storage.service.js";
+import path from "node:path";
+import {readFile} from "node:fs/promises";
+import {db} from "../database/database.js";
+import {createTask,resumeTask} from "../core/task.service.js";
+import {walkFiles,safeTarget} from "../runtime/filesystem.service.js";
+import {addClient,removeClient} from "../core/telemetry.js";
+import {VERSION,GITHUB_ENABLED,GITHUB_OWNER,GITHUB_VISIBILITY,WORKER_ID,now} from "../config/config.js";
+import {aiProviderStatus,aiProviderHealth,availableAIProviders} from "../agent/provider.service.js";
+import {providerCircuits} from "../core/provider-circuit.service.js";
+import {workerPoolStatus} from "../workers/worker-pool.service.js";
+import {listSlots} from "../workers/worker-slot.repository.js";
+import {listJobs,queueStats} from "../jobs/job.repository.js";
+import {cancelTaskJob,pauseTask,changeTaskPriority,scheduleTask} from "../jobs/job.service.js";
+import {sandboxStatus} from "../sandbox/sandbox-manager.service.js";
+import {securityStatus,securityEvents} from "../security/security-status.service.js";
+
+const DEMO_PROMPT="[VEYLITH_DEMO] Create and test the autonomous Veylith hello API.";
+
+export function createApp(){
+ const app=express();
+ app.use(express.json({limit:"5mb"}));
+ app.use(express.static(path.resolve("public")));
+
+ app.get("/api/health",(_req,res)=>{
+  res.json({
+   name:"Veylith",
+   version:VERSION,
+   status:"online",
+   workerPool:workerPoolStatus(),
+   workerSlots:listSlots(),
+   ai:aiProviderStatus(),
+   providerCircuits:providerCircuits(),
+   github:{configured:GITHUB_ENABLED,owner:GITHUB_OWNER||null,visibility:GITHUB_VISIBILITY},
+   worker:db.prepare("SELECT * FROM workers WHERE id=?").get(WORKER_ID),
+   time:now()
+  });
+ });
+
+ app.get("/api/ai",async(_req,res)=>{
+  try{res.json({active:await aiProviderHealth(),providers:availableAIProviders()})}
+  catch(error){res.status(500).json({error:error instanceof Error?error.message:String(error)})}
+ });
+
+ app.get("/api/dashboard",async(_req,res)=>{
+  try{
+   const workers=db.prepare("SELECT * FROM workers ORDER BY heartbeat_at DESC").all();
+   const projects=db.prepare("SELECT * FROM projects ORDER BY created_at DESC LIMIT 50").all();
+   const tasks=db.prepare("SELECT * FROM tasks ORDER BY created_at DESC LIMIT 100").all();
+   const events=db.prepare("SELECT * FROM events ORDER BY id DESC LIMIT 150").all().reverse();
+   const metrics=db.prepare("SELECT * FROM metrics ORDER BY id DESC LIMIT 120").all().reverse();
+   const stats=db.prepare(`SELECT COUNT(*) total,SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END) queued,SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) running,SUM(CASE WHEN status='paused' THEN 1 ELSE 0 END) paused,SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) completed,SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) failed,SUM(repair_attempts) repairs FROM tasks`).get();
+   const [sandbox,security]=await Promise.all([sandboxStatus(),securityStatus()]);
+   res.json({
+    version:VERSION,
+    workerPool:workerPoolStatus(),
+    workerSlots:listSlots(),
+    ai:aiProviderStatus(),
+    providerCircuits:providerCircuits(),
+    github:{configured:GITHUB_ENABLED,owner:GITHUB_OWNER||null,visibility:GITHUB_VISIBILITY},
+    sandbox,
+    security,
+    workers,
+    projects,
+    tasks,
+    jobs:listJobs(100),
+    queue:queueStats(),
+    events,
+    metrics,
+    stats
+   });
+  }catch(error){
+   res.status(500).json({error:error instanceof Error?error.message:String(error)});
+  }
+ });
+
+ app.get("/api/jobs",(_req,res)=>{
+  res.json({stats:queueStats(),jobs:listJobs(200)});
+ });
+
+ app.get("/api/security",async(_req,res)=>{
+  try{res.json(await securityStatus())}
+  catch(error){res.status(500).json({error:error instanceof Error?error.message:String(error)})}
+ });
+
+ app.get("/api/security/events",(req,res)=>{
+  try{
+   const requested=Number(req.query.limit||100);
+   res.json({events:securityEvents(Number.isFinite(requested)?requested:100)});
+  }catch(error){
+   res.status(500).json({error:error instanceof Error?error.message:String(error)});
+  }
+ });
+
+ app.get("/api/sandbox",async(_req,res)=>{
+  try{res.json(await sandboxStatus())}
+  catch(error){res.status(500).json({error:error instanceof Error?error.message:String(error)})}
+ });
+
+ app.post("/api/tasks/:id/cancel",(req,res)=>{
+  try{res.json(cancelTaskJob(req.params.id))}
+  catch(error){res.status(400).json({error:error instanceof Error?error.message:String(error)})}
+ });
+
+ app.post("/api/tasks/:id/pause",(req,res)=>{
+  try{res.json(pauseTask(req.params.id,String(req.body?.reason||"Paused by user")))}
+  catch(error){res.status(400).json({error:error instanceof Error?error.message:String(error)})}
+ });
+
+ app.post("/api/tasks/:id/priority",(req,res)=>{
+  const priority=Number(req.body?.priority);
+  if(!Number.isFinite(priority)){res.status(400).json({error:"Numeric priority is required."});return}
+  try{res.json(changeTaskPriority(req.params.id,priority))}
+  catch(error){res.status(400).json({error:error instanceof Error?error.message:String(error)})}
+ });
+
+ app.post("/api/tasks/:id/schedule",(req,res)=>{
+  const availableAt=String(req.body?.availableAt||"").trim();
+  if(!availableAt){res.status(400).json({error:"availableAt is required."});return}
+  try{res.json(scheduleTask(req.params.id,availableAt))}
+  catch(error){res.status(400).json({error:error instanceof Error?error.message:String(error)})}
+ });
+
+ app.get("/api/logs",(req,res)=>{
+  const limit=Number(req.query.limit||200);
+  res.json({
+   logs:queryLogs({
+    level:typeof req.query.level==="string"?req.query.level as any:undefined,
+    component:typeof req.query.component==="string"?req.query.component:undefined,
+    taskId:typeof req.query.taskId==="string"?req.query.taskId:undefined,
+    projectId:typeof req.query.projectId==="string"?req.query.projectId:undefined,
+    jobId:typeof req.query.jobId==="string"?req.query.jobId:undefined,
+    runtimeId:typeof req.query.runtimeId==="string"?req.query.runtimeId:undefined,
+    search:typeof req.query.search==="string"?req.query.search:undefined,
+    limit:Number.isFinite(limit)?limit:200
+   })
+  });
+ });
+ app.get("/api/logs/stats",(_req,res)=>{
+  res.json({
+   stats:logStats(),
+   storage:logStorageStatus()
+  });
+ });
+ app.get("/api/logs/files",(_req,res)=>{
+  res.json({files:logFiles()});
+ });
+ app.get("/api/events",(req,res)=>{
+  res.setHeader("Content-Type","text/event-stream");
+  res.setHeader("Cache-Control","no-cache");
+  res.setHeader("Connection","keep-alive");
+  res.flushHeaders();
+  addClient(res);
+  res.write(`data: ${JSON.stringify({channel:"connected",payload:{time:now(),version:VERSION}})}\n\n`);
+  req.on("close",()=>removeClient(res));
+ });
+
+ app.post("/api/tasks",(req,res)=>{
+  const prompt=String(req.body?.prompt||"").trim();
+  const name=String(req.body?.name||"").trim()||`Veylith Project ${Date.now()}`;
+  if(prompt.length<5){res.status(400).json({error:"Development request is required."});return}
+  try{res.status(201).json(createTask(name,prompt))}
+  catch(error){res.status(500).json({error:error instanceof Error?error.message:String(error)})}
+ });
+
+ app.post("/api/tasks/:id/resume",(req,res)=>{
+  try{res.json(resumeTask(req.params.id,"manual_api"))}
+  catch(error){res.status(400).json({error:error instanceof Error?error.message:String(error)})}
+ });
+
+ app.post("/api/demo",(_req,res)=>{
+  try{res.status(201).json(createTask(`Veylith Hello ${Date.now()}`,DEMO_PROMPT,"demo"))}
+  catch(error){res.status(500).json({error:error instanceof Error?error.message:String(error)})}
+ });
+
+ app.get("/api/projects/:id",(req,res)=>{
+  const project=db.prepare("SELECT * FROM projects WHERE id=?").get(req.params.id);
+  if(!project){res.status(404).json({error:"Project not found."});return}
+  res.json({
+   project,
+   tasks:db.prepare("SELECT * FROM tasks WHERE project_id=? ORDER BY created_at DESC").all(req.params.id),
+   memories:db.prepare("SELECT * FROM project_memory WHERE project_id=? ORDER BY id DESC").all(req.params.id),
+   executions:db.prepare("SELECT * FROM executions WHERE project_id=? ORDER BY id DESC").all(req.params.id),
+   events:db.prepare("SELECT * FROM events WHERE project_id=? ORDER BY id DESC LIMIT 200").all(req.params.id)
+  });
+ });
+
+ app.get("/api/projects/:id/files",async(req,res)=>{
+  const project=db.prepare("SELECT * FROM projects WHERE id=?").get(req.params.id) as any;
+  if(!project){res.status(404).json({error:"Project not found."});return}
+  try{
+   res.json({project,files:await walkFiles(project.workspace)});
+  }catch(error){
+   res.status(400).json({error:error instanceof Error?error.message:String(error)});
+  }
+ });
+
+ app.get("/api/projects/:id/file",async(req,res)=>{
+  const project=db.prepare("SELECT * FROM projects WHERE id=?").get(req.params.id) as any;
+  if(!project){res.status(404).json({error:"Project not found."});return}
+  try{
+   const relative=String(req.query.path||"");
+   res.json({path:relative,content:await readFile(safeTarget(project.workspace,relative),"utf8")});
+  }catch(error){
+   res.status(404).json({error:error instanceof Error?error.message:"File not found."});
+  }
+ });
+
+ app.use((_req,res)=>res.sendFile(path.resolve("public/index.html")));
+ return app;
+}
+
+
+
+================ v0.8 REGRESSION RUNNER ================
+import {spawn} from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+
+const root=process.cwd();
+const results=[];
+
+function run(name,command,args=[]){
+ return new Promise(resolve=>{
+  const started=Date.now();
+  const child=spawn(command,args,{
+   cwd:root,
+   shell:process.platform==="win32",
+   stdio:["ignore","pipe","pipe"],
+   env:process.env
+  });
+  let stdout="";
+  let stderr="";
+  child.stdout?.on("data",data=>{
+   const text=data.toString();
+   stdout+=text;
+   process.stdout.write(text);
+  });
+  child.stderr?.on("data",data=>{
+   const text=data.toString();
+   stderr+=text;
+   process.stderr.write(text);
+  });
+  child.on("error",error=>{
+   results.push({
+    name,
+    passed:false,
+    code:-1,
+    duration:Date.now()-started,
+    error:error.message
+   });
+   resolve(false);
+  });
+  child.on("close",code=>{
+   const passed=code===0;
+   results.push({
+    name,
+    passed,
+    code:code??-1,
+    duration:Date.now()-started,
+    stdout:stdout.slice(-4000),
+    stderr:stderr.slice(-4000)
+   });
+   resolve(passed);
+  });
+ });
+}
+
+function check(name,condition,detail=""){
+ const passed=Boolean(condition);
+ results.push({
+  name,
+  passed,
+  code:passed?0:1,
+  duration:0,
+  error:passed?"":detail
+ });
+ console.log(`${passed?"PASS":"FAIL"} ${name}${detail&&!passed?`: ${detail}`:""}`);
+ return passed;
+}
+
+function file(rel){
+ return path.join(root,rel);
+}
+
+function text(rel){
+ return fs.existsSync(file(rel))?fs.readFileSync(file(rel),"utf8"):"";
+}
+
+console.log("============================================================");
+console.log(" VEYLITH v0.8 FULL INTELLIGENCE REGRESSION");
+console.log("============================================================");
+
+console.log("\n=== 1. BUILD ===");
+await run("TypeScript build","npm",["run","build"]);
+
+console.log("\n=== 2. INTELLIGENCE STRUCTURE ===");
+const requiredFiles=[
+ "src/intelligence/repository.types.ts",
+ "src/intelligence/repository-scanner.service.ts",
+ "src/intelligence/repository-classifier.service.ts",
+ "src/intelligence/repository-context.service.ts",
+ "src/intelligence/context-budget.service.ts",
+ "src/intelligence/context-query.service.ts",
+ "src/intelligence/repository-intelligence.service.ts",
+ "src/intelligence/change.types.ts",
+ "src/intelligence/change-classifier.service.ts",
+ "src/intelligence/change-analysis.service.ts",
+ "src/intelligence/change-guard.service.ts",
+ "src/intelligence/change-context.service.ts",
+ "src/intelligence/repair-scope.service.ts",
+ "src/intelligence/targeted-repair-context.service.ts",
+ "src/intelligence/review-evidence.service.ts",
+ "src/intelligence/review-decision.service.ts"
+];
+for(const rel of requiredFiles){
+ check(`intelligence file ${rel}`,fs.existsSync(file(rel)),"missing");
+}
+
+console.log("\n=== 3. AGENT INTELLIGENCE INTEGRATION ===");
+const agentChecks=[
+ ["planner","src/agent/planner.service.ts"],
+ ["architect","src/agent/architect.service.ts"],
+ ["development-planner","src/agent/development-planner.service.ts"],
+ ["developer","src/agent/developer.service.ts"],
+ ["diagnostic","src/agent/diagnostic.service.ts"],
+ ["repair","src/agent/repair.service.ts"],
+ ["reviewer","src/agent/reviewer.service.ts"]
+];
+for(const [name,rel] of agentChecks){
+ const source=text(rel);
+ check(
+  `${name} repository intelligence`,
+  source.includes("repositoryIntelligence")||
+  source.includes("changeAwareContext")||
+  source.includes("targetedRepairContext"),
+  "agent is not using the v0.8 context system"
+ );
+}
+
+console.log("\n=== 4. CHANGE-AWARE DEVELOPMENT ===");
+const pipeline=text("src/orchestration/pipeline.service.ts");
+const orchestrator=text("src/orchestration/orchestrator.service.ts");
+check(
+ "pipeline uses change analysis",
+ pipeline.includes("analyzeChange")||pipeline.includes("changeAnalysis"),
+ "change analysis integration missing"
+);
+check(
+ "pipeline uses change guard",
+ pipeline.includes("assertChangeSetSafe"),
+ "change guard integration missing"
+);
+check(
+ "initial development receives plan",
+ orchestrator.includes("applyDevelopment(result,task,project,context.plan)"),
+ "initial change guard is not plan-aware"
+);
+check(
+ "repair development receives plan",
+ orchestrator.includes("applyDevelopment(result,task,project,context.plan"),
+ "repair change guard is not plan-aware"
+);
+
+console.log("\n=== 5. TARGETED REPAIR INTEGRATION ===");
+const repair=text("src/agent/repair.service.ts");
+const diagnostic=text("src/agent/diagnostic.service.ts");
+check(
+ "repair uses targeted context",
+ repair.includes("targetedRepairContext"),
+ "targeted repair context missing"
+);
+check(
+ "repair enforces repair scope",
+ repair.includes("assertRepairScope"),
+ "repair scope guard missing"
+);
+check(
+ "diagnostic exposes relevant files",
+ diagnostic.includes("relevantFiles"),
+ "diagnostic relevantFiles missing"
+);
+check(
+ "diagnostic fingerprints failures",
+ diagnostic.includes("failureFingerprint"),
+ "failure fingerprinting missing"
+);
+check(
+ "orchestrator supplies repair history",
+ orchestrator.includes("historyBeforeRepair")&&
+ orchestrator.includes("repairHistory(project.id)"),
+ "repair history integration missing"
+);
+
+console.log("\n=== 6. AUTONOMOUS REVIEW INTEGRATION ===");
+const reviewer=text("src/agent/reviewer.service.ts");
+check(
+ "reviewer builds deterministic evidence",
+ reviewer.includes("buildReviewEvidence"),
+ "review evidence missing"
+);
+check(
+ "reviewer applies deterministic decision",
+ reviewer.includes("finalizeReview"),
+ "review decision gate missing"
+);
+check(
+ "review receives actual development",
+ orchestrator.includes(
+  "reviewProject(task,project,context.architecture!,context.plan!,context.development!,validation)"
+ ),
+ "reviewProject is not receiving development"
+);
+check(
+ "review rejection remains inside repair loop",
+ orchestrator.includes("if(review.approved)break")&&
+ orchestrator.includes('type:"review",review'),
+ "review rejection repair path missing"
+);
+check(
+ "repair validation checkpoint exists",
+ orchestrator.includes("repair_validation_"),
+ "repair validation checkpoint missing"
+);
+
+console.log("\n=== 7. FOCUSED REPAIR REGRESSION ===");
+await run(
+ "v0.8 repair regression",
+ "node",
+ ["scripts/v08-repair-regression.mjs"]
+);
+
+console.log("\n=== 8. AUTONOMOUS REVIEW REGRESSION ===");
+await run(
+ "v0.8 review regression",
+ "node",
+ ["scripts/v08-review-regression.mjs"]
+);
+
+console.log("\n=== 9. v0.7 SECURITY REGRESSION ===");
+await run(
+ "v0.7 security regression",
+ "node",
+ ["scripts/security-regression.mjs"]
+);
+
+console.log("\n============================================================");
+console.log(" FINAL RESULT");
+console.log("============================================================");
+
+const failed=results.filter(result=>!result.passed);
+const passed=results.filter(result=>result.passed);
+
+console.log(`Passed: ${passed.length}`);
+console.log(`Failed: ${failed.length}`);
+console.log(`Total:  ${results.length}`);
+
+if(failed.length){
+ console.log("\nFAILED CHECKS:");
+ for(const failure of failed){
+  console.log(`- ${failure.name}`);
+  if(failure.error)console.log(`  ${failure.error}`);
+  if(failure.stderr)console.log(`  ${failure.stderr.slice(-800)}`);
+ }
+ console.log("\nVEYLITH v0.8 FULL REGRESSION FAILED");
+ process.exitCode=1;
+}else{
+ console.log("\nVEYLITH v0.8 FULL INTELLIGENCE REGRESSION PASSED");
+}
+
+
+
+================ SERVER ================
+import "dotenv/config";
+import {createApp} from "./api/routes.js";
+import {db} from "./database/database.js";
+import {workerLoop} from "./core/worker.service.js";
+import {recoverInterruptedTasks,resumePausedAIJobs} from "./core/recovery.service.js";
+import {collectMetrics} from "./monitoring/metrics.service.js";
+import {event,setWorker} from "./core/telemetry.js";
+import {VERSION,PORT,POLL,METRIC_INTERVAL,WORKER_ID,GITHUB_ENABLED,GITHUB_OWNER,ROOT,DB_PATH} from "./config/config.js";
+import {aiProviderStatus} from "./agent/provider.service.js";
+import {initializeWorkerSlots} from "./workers/worker-slot.service.js";
+import {registerRuntime,startRuntimeHeartbeat,setRuntimeStatus,markRuntimeStopping,markRuntimeStopped,RUNTIME_ID} from "./runtime/runtime-instance.service.js";
+import {releaseRuntimeJobs} from "./jobs/job-recovery.service.js";
+import {cancelAllSandboxes} from "./sandbox/sandbox-manager.service.js";
+
+registerRuntime();
+recoverInterruptedTasks();
+initializeWorkerSlots();
+startRuntimeHeartbeat();
+
+const app=createApp();
+const ai=aiProviderStatus();
+
+setWorker("online","booting");
+
+event("system.started",`Veylith Core v${VERSION} started`,{
+ data:{
+  pid:process.pid,
+  worker:WORKER_ID,
+  aiConfigured:ai.configured,
+  aiProvider:ai.provider,
+  aiModel:ai.model,
+  githubConfigured:GITHUB_ENABLED
+ }
+});
+
+const server=app.listen(PORT,()=>{
+ console.log("");
+ console.log("==========================================");
+ console.log(` VEYLITH CORE v${VERSION}`);
+ console.log("==========================================");
+ console.log(` Control Center : http://localhost:${PORT}`);
+ console.log(` Worker         : ${WORKER_ID}`);
+ console.log(` AI             : ${ai.provider} / ${ai.model} ${ai.configured?"CONFIGURED":"NOT CONFIGURED"}`);
+ console.log(` GitHub         : ${GITHUB_ENABLED?`${GITHUB_OWNER} READY`:"NOT CONFIGURED"}`);
+ console.log(` Workspace      : ${ROOT}`);
+ console.log(` Database       : ${DB_PATH}`);
+ console.log("==========================================");
+ console.log("");
+ setWorker("online","idle");
+ void startBackgroundServices();
+});
+
+let workerRunning=false;
+let metricsRunning=false;
+let recoveryRunning=false;
+
+async function runWorker(){
+ if(workerRunning)return;
+ workerRunning=true;
+ try{
+  await workerLoop();
+ }catch(error){
+  event(
+   "worker.error",
+   error instanceof Error?error.message:String(error),
+   {level:"error"}
+  );
+ }finally{
+  workerRunning=false;
+ }
+}
+
+async function runMetrics(){
+ if(metricsRunning)return;
+ metricsRunning=true;
+ try{
+  await collectMetrics();
+ }catch(error){
+  event(
+   "metrics.error",
+   error instanceof Error?error.message:String(error),
+   {level:"warn"}
+  );
+ }finally{
+  metricsRunning=false;
+ }
+}
+
+async function runRecovery(){
+ if(recoveryRunning)return;
+ recoveryRunning=true;
+ try{
+  await resumePausedAIJobs();
+ }catch(error){
+  event(
+   "recovery.error",
+   error instanceof Error?error.message:String(error),
+   {level:"warn"}
+  );
+ }finally{
+  recoveryRunning=false;
+ }
+}
+
+async function startBackgroundServices(){
+ void runMetrics();
+ void runWorker();
+ void runRecovery();
+
+ setInterval(()=>{
+  void runWorker();
+ },POLL);
+
+ setInterval(()=>{
+  void runMetrics();
+ },METRIC_INTERVAL);
+
+ setInterval(()=>{
+  void runRecovery();
+ },5000);
+}
+
+let shuttingDown=false;
+
+async function shutdown(signal:string){
+ if(shuttingDown)return;
+ shuttingDown=true;
+ console.log(`Veylith shutting down (${signal})...`);
+ try{
+  markRuntimeStopping(signal);
+  event("system.stopping",`Veylith received ${signal}`,{
+   data:{runtimeId:RUNTIME_ID}
+  });
+  try{await cancelAllSandboxes("shutdown")}catch{}
+  try{releaseRuntimeJobs(RUNTIME_ID,`Graceful shutdown: ${signal}`)}catch{}
+  try{markRuntimeStopped(signal)}catch{}
+  try{event("system.stopped",`Veylith stopped after ${signal}`,{data:{runtimeId:RUNTIME_ID}})}catch{}
+ }finally{
+  server.close(()=>{
+   try{db.close()}catch{}
+   process.exit(0);
+  });
+  setTimeout(()=>{
+   try{db.close()}catch{}
+   process.exit(1);
+  },5000).unref();
+ }
+}
+
+function fatal(kind:string,error:unknown){
+ const message=error instanceof Error?error.stack||error.message:String(error);
+ try{
+  event("system.fatal",message,{
+   level:"error",
+   data:{kind,runtimeId:RUNTIME_ID}
+  });
+  setRuntimeStatus("crashed",`${kind}: ${message.slice(0,1000)}`);
+ }catch{}
+ console.error(message);
+ void shutdown(kind);
+}
+
+process.on("SIGINT",()=>{void shutdown("SIGINT")});
+process.on("SIGTERM",()=>{void shutdown("SIGTERM")});
+process.on("uncaughtException",error=>fatal("uncaughtException",error));
+process.on("unhandledRejection",error=>fatal("unhandledRejection",error));
+
+
+

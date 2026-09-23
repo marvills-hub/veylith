@@ -110,6 +110,58 @@ completed_at TEXT,
 created_at TEXT NOT NULL,
 updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS jobs(
+ id TEXT PRIMARY KEY,
+ type TEXT NOT NULL DEFAULT 'task',
+ task_id TEXT NOT NULL,
+ project_id TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'queued',
+ priority INTEGER NOT NULL DEFAULT 0,
+ attempts INTEGER NOT NULL DEFAULT 0,
+ max_attempts INTEGER NOT NULL DEFAULT 3,
+ available_at TEXT NOT NULL,
+ claimed_by TEXT,
+ claimed_at TEXT,
+ lease_expires_at TEXT,
+ heartbeat_at TEXT,
+ last_error TEXT,
+ created_at TEXT NOT NULL,
+ updated_at TEXT NOT NULL,
+ completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_dispatch ON jobs(status,available_at,priority,created_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_task ON jobs(task_id,created_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_lease ON jobs(status,lease_expires_at);
+CREATE TABLE IF NOT EXISTS worker_slots(
+ id TEXT PRIMARY KEY,
+ worker_id TEXT NOT NULL,
+ slot INTEGER NOT NULL,
+ hostname TEXT NOT NULL,
+ pid INTEGER NOT NULL,
+ status TEXT NOT NULL DEFAULT 'idle',
+ phase TEXT NOT NULL DEFAULT 'waiting',
+ job_id TEXT,
+ task_id TEXT,
+ project_id TEXT,
+ started_at TEXT NOT NULL,
+ heartbeat_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_worker_slots_worker ON worker_slots(worker_id,slot);
+CREATE INDEX IF NOT EXISTS idx_worker_slots_status ON worker_slots(status,heartbeat_at);
+CREATE TABLE IF NOT EXISTS provider_circuits(
+provider TEXT PRIMARY KEY,
+state TEXT NOT NULL DEFAULT 'closed',
+consecutive_failures INTEGER NOT NULL DEFAULT 0,
+consecutive_successes INTEGER NOT NULL DEFAULT 0,
+opened_at INTEGER,
+retry_at INTEGER,
+cooldown_ms INTEGER NOT NULL DEFAULT 120000,
+last_failure_at INTEGER,
+last_success_at INTEGER,
+last_error TEXT,
+updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_provider_circuits_state ON provider_circuits(state,retry_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status,priority,created_at);
 CREATE INDEX IF NOT EXISTS idx_events_project ON events(project_id,id);
 CREATE INDEX IF NOT EXISTS idx_steps_task ON development_steps(task_id,sequence);
@@ -128,9 +180,23 @@ ensureColumn("projects","github_url","TEXT");
 ensureColumn("projects","github_branch","TEXT");
 ensureColumn("projects","github_commit","TEXT");
 ensureColumn("projects","github_pushed_at","TEXT");
-export function memory(projectId:string,type:string,content:string){
- db.prepare("INSERT INTO project_memory(project_id,type,content,created_at) VALUES(?,?,?,?)").run(projectId,type,content,now());
+export function memory(projectId:string,type:string,content:unknown){
+ let serialized:string;
+ if(typeof content==="string")serialized=content;
+ else if(content===undefined)serialized="null";
+ else{
+  try{
+   serialized=JSON.stringify(content)??"null";
+  }catch{
+   serialized=String(content);
+  }
+ }
+ db.prepare("INSERT INTO project_memory(project_id,type,content,created_at) VALUES(?,?,?,?)").run(projectId,type,serialized,now());
 }
 export function projectMemory(projectId:string){
  return db.prepare("SELECT type,content,created_at FROM project_memory WHERE project_id=? ORDER BY id DESC LIMIT 30").all(projectId);
 }
+
+
+
+

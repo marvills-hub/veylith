@@ -12,6 +12,7 @@ const progress:Record<DevelopmentPhase,number>={
  validation:65,
  review:78,
  repair:82,
+ diagnosis:70,
  versioning:90,
  publishing:94,
  completed:100,
@@ -87,3 +88,4 @@ export async function runStep<T>(
   throw error;
  }
 }
+

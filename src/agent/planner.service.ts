@@ -1,8 +1,10 @@
-﻿import {MAX_REPAIR_ATTEMPTS} from "../config/config.js";
+import {MAX_REPAIR_ATTEMPTS} from "../config/config.js";
 import {projectMemory} from "../database/database.js";
-import {sourceSnapshot,writeProjectFile} from "../runtime/filesystem.service.js";
+import {writeProjectFile} from "../runtime/filesystem.service.js";
 import {runCommand} from "../runtime/command.service.js";
 import {aiJSON} from "./ai.service.js";
+import {repositoryIntelligence} from "../intelligence/repository-intelligence.service.js";
+
 function demoPlan(project:any){
  return{
   summary:"Create and verify Veylith's autonomous hello API.",
@@ -14,40 +16,96 @@ function demoPlan(project:any){
   commands:[{command:"node",args:["test.js"]}]
  };
 }
+
 export async function createPlan(task:any,project:any){
  if(task.prompt.startsWith("[VEYLITH_DEMO]"))return demoPlan(project);
+ const intelligence=await repositoryIntelligence(project.workspace,task.prompt,50000);
  const system=`You are Veylith's senior autonomous software engineering planner.
-Design complete runnable implementations, not snippets.
+Design and implement complete runnable changes against the ACTUAL repository.
 Return ONLY JSON.
 Schema:
 {"summary":"implementation summary","architecture":["decision"],"files":[{"path":"relative/path","content":"COMPLETE file content"}],"commands":[{"command":"npm|npx|node","args":["argument"]}]}
 Rules:
-- All file contents must be complete.
+- REPOSITORY CONTEXT is authoritative evidence of the existing project.
+- Preserve existing architecture and behavior not related to the request.
+- Prefer targeted modifications instead of recreating an existing project.
+- All returned file contents must be complete.
 - Paths must be relative.
-- Prefer minimal dependencies.
-- Include build/test commands appropriate for the project.
+- Prefer existing dependencies and project conventions.
+- Add dependencies only when genuinely required.
+- Include finite build/test/lint commands appropriate for the project.
+- Prefer existing validation scripts when available.
 - Do not use shell operators.
 - Do not use destructive commands.
 - Do not include git commands.
-- Do not access paths outside the project.`;
- return aiJSON(system,`PROJECT: ${project.name}\nREQUEST:\n${task.prompt}`,task.id,project.id);
+- Do not access paths outside the project.
+- Never include npm start, npm run start, npm run dev, watch mode, development servers, production servers or interactive commands.
+- Every validation command must terminate automatically.`;
+ return aiJSON(
+  system,
+  `PROJECT:
+${project.name}
+
+REQUEST:
+${task.prompt}
+
+REPOSITORY CONTEXT:
+${intelligence.prompt}`,
+  task.id,
+  project.id
+ );
 }
+
 export async function repairPlan(task:any,project:any,failure:any,attempt:number){
- const snapshot=await sourceSnapshot(project.workspace);
  const memories=projectMemory(project.id);
+ const failureData=failure?.failure||failure||{};
+ const query=[
+  task.prompt,
+  String(failureData.command||""),
+  JSON.stringify(failureData.args||[]),
+  String(failureData.stderr||"").slice(-8000),
+  String(failureData.stdout||"").slice(-8000),
+  "repair validation failure"
+ ].join(" ");
+ const intelligence=await repositoryIntelligence(project.workspace,query,60000);
  const system=`You are Veylith's autonomous repair engineer.
 A generated project failed validation.
-Analyze the actual failure and return ONLY JSON.
+Analyze the ACTUAL repository and ACTUAL failure and return ONLY JSON.
 Schema:
 {"analysis":"root cause","files":[{"path":"relative/path","content":"COMPLETE replacement file content"}],"commands":[{"command":"npm|npx|node","args":["argument"]}]}
 Rules:
+- REPOSITORY CONTEXT is authoritative for the current selected source.
+- Diagnose and fix the root cause rather than only the visible symptom.
 - Change only files necessary to repair the failure.
+- Preserve behavior that is already correct.
 - Return complete replacement contents.
+- Never weaken valid tests merely to make validation pass.
 - Do not use shell operators or destructive commands.
-- Commands must validate the repair.
+- Commands must validate the repair and terminate automatically.
+- Prefer the smallest validation that reproduces the failure, then broader validation when useful.
+- Never include npm start, npm run start, npm run dev, watch mode or server commands.
 - Do not use git commands.`;
- return aiJSON(system,`TASK:\n${task.prompt}\nREPAIR ATTEMPT: ${attempt}/${MAX_REPAIR_ATTEMPTS}\nFAILURE:\n${JSON.stringify(failure,null,2)}\nMEMORY:\n${JSON.stringify(memories,null,2)}\nCURRENT PROJECT:\n${snapshot}`,task.id,project.id);
+ return aiJSON(
+  system,
+  `TASK:
+${task.prompt}
+
+REPAIR ATTEMPT:
+${attempt}/${MAX_REPAIR_ATTEMPTS}
+
+FAILURE:
+${JSON.stringify(failure,null,2)}
+
+MEMORY:
+${JSON.stringify(memories,null,2)}
+
+REPOSITORY CONTEXT:
+${intelligence.prompt}`,
+  task.id,
+  project.id
+ );
 }
+
 export async function applyPlan(plan:any,task:any,project:any){
  if(!Array.isArray(plan.files)||!Array.isArray(plan.commands))throw new Error("Invalid development plan.");
  for(const file of plan.files){
@@ -55,13 +113,20 @@ export async function applyPlan(plan:any,task:any,project:any){
   await writeProjectFile(project.workspace,file.path,file.content,task.id,project.id);
  }
 }
+
 export async function validatePlan(plan:any,task:any,project:any){
  const results:any[]=[];
  if(!plan.commands.length)throw new Error("Development plan did not provide validation commands.");
  for(const item of plan.commands){
   if(typeof item.command!=="string"||!Array.isArray(item.args))throw new Error("Invalid validation command.");
   const result=await runCommand(item.command,item.args,project.workspace,task.id,project.id);
-  results.push({command:item.command,args:item.args,code:result.code,stdout:result.stdout.slice(-6000),stderr:result.stderr.slice(-6000)});
+  results.push({
+   command:item.command,
+   args:item.args,
+   code:result.code,
+   stdout:result.stdout.slice(-6000),
+   stderr:result.stderr.slice(-6000)
+  });
   if(result.code!==0)return{success:false,results,failure:results[results.length-1]};
  }
  return{success:true,results};

@@ -6,6 +6,7 @@
  |"validation"
  |"review"
  |"repair"
+ | "diagnosis"
  |"versioning"
  |"publishing"
  |"completed"
@@ -83,3 +84,7 @@ export interface PipelineContext{
  validation?:any;
  github?:any;
 }
+
+
+
+

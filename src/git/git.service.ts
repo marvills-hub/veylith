@@ -6,6 +6,7 @@ import {db,memory} from "../database/database.js";
 import {event,setPhase} from "../core/telemetry.js";
 import {GITHUB_ENABLED,GITHUB_OWNER,GITHUB_TOKEN,GITHUB_VISIBILITY,now} from "../config/config.js";
 import {createGitHubRepository,publishGitHubRepository,verifyGitHubRepository} from "./github.service.js";
+
 export async function initializeGit(task:any,project:any){
  setPhase(task.id,project.id,"versioning",90);
  event("git.initializing","Initializing project repository",{taskId:task.id,projectId:project.id});
@@ -23,14 +24,24 @@ export async function initializeGit(task:any,project:any){
  if(!existsSync(ignore))await writeFile(ignore,"node_modules/\ndist/\nbuild/\n.env\n*.log\n","utf8");
  await git.add(".");
  const status=await git.status();
+ let created=false;
  if(status.files.length){
   await git.commit(`Veylith: complete ${task.title}`);
-  const log=await git.log({maxCount:1});
-  const commit=log.latest?.hash||null;
-  memory(project.id,"git_commit",JSON.stringify({commit,message:`Veylith: complete ${task.title}`}));
-  event("git.committed",`Committed ${status.files.length} changed files`,{taskId:task.id,projectId:project.id,data:{commit}});
+  created=true;
  }
+ const log=await git.log({maxCount:1});
+ const commit=log.latest?.hash||null;
+ const message=log.latest?.message||`Veylith: complete ${task.title}`;
+ const result={commit,message,created,changedFiles:status.files.length};
+ memory(project.id,"git_commit",JSON.stringify(result));
+ if(created){
+  event("git.committed",`Committed ${status.files.length} changed files`,{taskId:task.id,projectId:project.id,data:{commit}});
+ }else{
+  event("git.existing",commit?`Using existing commit ${commit}`:"Repository contains no commit",{taskId:task.id,projectId:project.id,data:{commit}});
+ }
+ return result;
 }
+
 export async function publishToGitHub(task:any,project:any){
  if(!GITHUB_ENABLED){
   event("github.skipped","GitHub publishing is not configured",{taskId:task.id,projectId:project.id,level:"warn"});

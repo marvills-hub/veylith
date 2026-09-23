@@ -1,0 +1,925 @@
+
+
+============================================================
+FILE: src\config\config.ts
+============================================================
+
+import "dotenv/config";
+import path from "node:path";
+import os from "node:os";
+export const VERSION="0.5.5";
+export const PORT=Number(process.env.PORT||7410);
+export const ROOT=path.resolve(process.env.WORKSPACE_ROOT||"./workspaces");
+export const DB_PATH=path.resolve(process.env.DATABASE_PATH||"./data/veylith.db");
+export const POLL=Number(process.env.WORKER_POLL_MS||2500);
+export const METRIC_INTERVAL=Number(process.env.METRIC_INTERVAL_MS||3000);
+export const MAX_REPAIR_ATTEMPTS=6;
+export const WORKER_ID=`veylith-${os.hostname().toLowerCase().replace(/[^a-z0-9-]/g,"-")}`;
+export const AI_PROVIDER=(process.env.AI_PROVIDER||"ollama-cloud").trim().toLowerCase();
+export const AI_KEY=process.env.OPENAI_API_KEY?.trim()||"";
+export const OPENAI_MODEL=(process.env.OPENAI_MODEL||"gpt-5.6").trim();
+export const AI_MODEL=OPENAI_MODEL;
+export const OLLAMA_URL=(process.env.OLLAMA_URL||"http://127.0.0.1:11434").replace(/\/+$/,"");
+export const OLLAMA_MODEL=(process.env.OLLAMA_MODEL||"qwen2.5-coder:7b").trim();
+export const OLLAMA_API_KEY=process.env.OLLAMA_API_KEY?.trim()||"";
+export const OLLAMA_CLOUD_URL=(process.env.OLLAMA_CLOUD_URL||"https://ollama.com").replace(/\/+$/,"");
+export const OLLAMA_CLOUD_MODEL=(process.env.OLLAMA_CLOUD_MODEL||"qwen3-coder:480b-cloud").trim();
+export const GITHUB_TOKEN=process.env.GITHUB_TOKEN?.trim()||"";
+export const GITHUB_OWNER=process.env.GITHUB_OWNER?.trim()||"";
+export const GITHUB_VISIBILITY=(process.env.GITHUB_REPO_VISIBILITY==="public"?"public":"private") as "private"|"public";
+export const GITHUB_ENABLED=Boolean(GITHUB_TOKEN&&GITHUB_OWNER);
+export const now=()=>new Date().toISOString();
+
+
+
+
+
+
+
+
+export const AI_REQUEST_TIMEOUT_MS=90000;
+export const AI_REQUEST_MAX_ATTEMPTS=2;
+export const AI_RETRY_BASE_DELAY_MS=2000;
+export const AI_HEALTH_TIMEOUT_MS=10000;
+export const AI_RECOVERY_INTERVAL_MS=60000;
+
+export const AI_CIRCUIT_FAILURE_THRESHOLD=1;
+export const AI_CIRCUIT_BASE_COOLDOWN_MS=120000;
+export const AI_CIRCUIT_MAX_COOLDOWN_MS=900000;
+export const AI_CIRCUIT_SUCCESS_THRESHOLD=1;
+
+
+============================================================
+FILE: src\database\database.ts
+============================================================
+
+import {DatabaseSync} from "node:sqlite";
+import {mkdir} from "node:fs/promises";
+import path from "node:path";
+import {DB_PATH,ROOT,now} from "../config/config.js";
+await mkdir(path.dirname(DB_PATH),{recursive:true});
+await mkdir(ROOT,{recursive:true});
+export const db=new DatabaseSync(DB_PATH);
+db.exec("PRAGMA journal_mode=WAL;");
+db.exec("PRAGMA foreign_keys=ON;");
+db.exec(`
+CREATE TABLE IF NOT EXISTS projects(
+id TEXT PRIMARY KEY,
+name TEXT NOT NULL,
+slug TEXT NOT NULL UNIQUE,
+status TEXT NOT NULL DEFAULT 'queued',
+phase TEXT NOT NULL DEFAULT 'queued',
+progress INTEGER NOT NULL DEFAULT 0,
+workspace TEXT NOT NULL,
+summary TEXT,
+created_at TEXT NOT NULL,
+updated_at TEXT NOT NULL,
+completed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS tasks(
+id TEXT PRIMARY KEY,
+project_id TEXT NOT NULL,
+title TEXT NOT NULL,
+prompt TEXT NOT NULL,
+status TEXT NOT NULL DEFAULT 'queued',
+phase TEXT NOT NULL DEFAULT 'queued',
+priority INTEGER NOT NULL DEFAULT 0,
+attempts INTEGER NOT NULL DEFAULT 0,
+repair_attempts INTEGER NOT NULL DEFAULT 0,
+max_attempts INTEGER NOT NULL DEFAULT 3,
+result TEXT,
+error TEXT,
+created_at TEXT NOT NULL,
+started_at TEXT,
+completed_at TEXT,
+updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS events(
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+type TEXT NOT NULL,
+worker_id TEXT,
+project_id TEXT,
+task_id TEXT,
+level TEXT NOT NULL DEFAULT 'info',
+message TEXT NOT NULL,
+data TEXT,
+created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS metrics(
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+cpu REAL NOT NULL,
+memory REAL NOT NULL,
+memory_used INTEGER NOT NULL,
+memory_total INTEGER NOT NULL,
+active_tasks INTEGER NOT NULL,
+queued_tasks INTEGER NOT NULL,
+completed_tasks INTEGER NOT NULL,
+failed_tasks INTEGER NOT NULL,
+uptime INTEGER NOT NULL,
+created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS workers(
+id TEXT PRIMARY KEY,
+hostname TEXT NOT NULL,
+pid INTEGER NOT NULL,
+status TEXT NOT NULL,
+phase TEXT NOT NULL,
+task_id TEXT,
+project_id TEXT,
+started_at TEXT NOT NULL,
+heartbeat_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS project_memory(
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+project_id TEXT NOT NULL,
+type TEXT NOT NULL,
+content TEXT NOT NULL,
+created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS executions(
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+project_id TEXT NOT NULL,
+task_id TEXT NOT NULL,
+command TEXT NOT NULL,
+args TEXT NOT NULL,
+exit_code INTEGER,
+stdout TEXT,
+stderr TEXT,
+duration_ms INTEGER,
+created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS development_steps(
+id TEXT PRIMARY KEY,
+task_id TEXT NOT NULL,
+project_id TEXT NOT NULL,
+phase TEXT NOT NULL,
+agent TEXT NOT NULL,
+title TEXT NOT NULL,
+status TEXT NOT NULL DEFAULT 'queued',
+sequence INTEGER NOT NULL DEFAULT 0,
+input TEXT,
+output TEXT,
+error TEXT,
+started_at TEXT,
+completed_at TEXT,
+created_at TEXT NOT NULL,
+updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS provider_circuits(
+provider TEXT PRIMARY KEY,
+state TEXT NOT NULL DEFAULT 'closed',
+consecutive_failures INTEGER NOT NULL DEFAULT 0,
+consecutive_successes INTEGER NOT NULL DEFAULT 0,
+opened_at INTEGER,
+retry_at INTEGER,
+cooldown_ms INTEGER NOT NULL DEFAULT 120000,
+last_failure_at INTEGER,
+last_success_at INTEGER,
+last_error TEXT,
+updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_provider_circuits_state ON provider_circuits(state,retry_at);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status,priority,created_at);
+CREATE INDEX IF NOT EXISTS idx_events_project ON events(project_id,id);
+CREATE INDEX IF NOT EXISTS idx_steps_task ON development_steps(task_id,sequence);
+CREATE INDEX IF NOT EXISTS idx_steps_project ON development_steps(project_id,sequence);
+`);
+function ensureColumn(table:string,column:string,type:string){
+ const columns=db.prepare(`PRAGMA table_info(${table})`).all() as any[];
+ if(!columns.some(x=>x.name===column))db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+}
+ensureColumn("projects","phase","TEXT NOT NULL DEFAULT 'queued'");
+ensureColumn("projects","summary","TEXT");
+ensureColumn("tasks","repair_attempts","INTEGER NOT NULL DEFAULT 0");
+ensureColumn("projects","github_owner","TEXT");
+ensureColumn("projects","github_repo","TEXT");
+ensureColumn("projects","github_url","TEXT");
+ensureColumn("projects","github_branch","TEXT");
+ensureColumn("projects","github_commit","TEXT");
+ensureColumn("projects","github_pushed_at","TEXT");
+export function memory(projectId:string,type:string,content:unknown){
+ let serialized:string;
+ if(typeof content==="string")serialized=content;
+ else if(content===undefined)serialized="null";
+ else{
+  try{
+   serialized=JSON.stringify(content)??"null";
+  }catch{
+   serialized=String(content);
+  }
+ }
+ db.prepare("INSERT INTO project_memory(project_id,type,content,created_at) VALUES(?,?,?,?)").run(projectId,type,serialized,now());
+}
+export function projectMemory(projectId:string){
+ return db.prepare("SELECT type,content,created_at FROM project_memory WHERE project_id=? ORDER BY id DESC LIMIT 30").all(projectId);
+}
+
+
+
+============================================================
+FILE: src\core\task.service.ts
+============================================================
+
+import {mkdir} from "node:fs/promises";
+import crypto from "node:crypto";
+import path from "node:path";
+import {db,memory} from "../database/database.js";
+import {ROOT,MAX_REPAIR_ATTEMPTS,AI_KEY,now} from "../config/config.js";
+import {event,setWorker,setPhase} from "./telemetry.js";
+import {createPlan,repairPlan,applyPlan,validatePlan} from "../agent/planner.service.js";
+import {initializeGit,publishToGitHub} from "../git/git.service.js";
+import {walkFiles} from "../runtime/filesystem.service.js";
+import {executeAutonomousPipeline} from "../orchestration/orchestrator.service.js";
+import {getAIProvider} from "../agent/provider.service.js";
+import {AIProviderError,isPermanentAIError} from "./ai-error.service.js";
+
+const makeId=(prefix:string)=>`${prefix}_${crypto.randomUUID().replace(/-/g,"").slice(0,16)}`;
+const makeSlug=(value:string)=>value.toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,55)||`project-${Date.now()}`;
+
+export function createTask(name:string,prompt:string,mode:"autonomous"|"demo"="autonomous"){
+ if(mode==="autonomous"){
+  const provider=getAIProvider();
+  if(!provider.configured)throw new Error(`AI provider "${provider.name}" is not configured. Configure an AI provider before creating autonomous tasks.`);
+ }
+ const projectId=makeId("prj"),taskId=makeId("tsk"),created=now();
+ let slug=makeSlug(name);
+ if(db.prepare("SELECT id FROM projects WHERE slug=?").get(slug))slug=`${slug}-${Date.now()}`;
+ const workspace=path.join(ROOT,slug);
+ db.exec("BEGIN IMMEDIATE");
+ try{
+  db.prepare("INSERT INTO projects(id,name,slug,status,phase,progress,workspace,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)").run(projectId,name,slug,"queued","queued",0,workspace,created,created);
+  db.prepare("INSERT INTO tasks(id,project_id,title,prompt,status,phase,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)").run(taskId,projectId,name,prompt,"queued","queued",created,created);
+  db.prepare("INSERT INTO project_memory(project_id,type,content,created_at) VALUES(?,?,?,?)").run(projectId,"execution_mode",mode,created);
+  db.exec("COMMIT");
+ }catch(error){
+  db.exec("ROLLBACK");
+  throw error;
+ }
+ event("task.created",name,{taskId,projectId,data:{prompt,mode}});
+ return{projectId,taskId,status:"queued",mode};
+}
+
+function executionMode(projectId:string){
+ const row=db.prepare("SELECT content FROM project_memory WHERE project_id=? AND type='execution_mode' ORDER BY id DESC LIMIT 1").get(projectId) as any;
+ return row?.content==="demo"?"demo":"autonomous";
+}
+
+async function executeDemoTask(task:any,project:any){
+ setPhase(task.id,project.id,"planning",10);
+ const plan=await createPlan(task,project);
+ db.prepare("UPDATE projects SET summary=?,updated_at=? WHERE id=?").run(plan.summary||null,now(),project.id);
+ memory(project.id,"plan",JSON.stringify({summary:plan.summary,architecture:plan.architecture||[]}));
+ event("plan.created",plan.summary||"Development plan created",{taskId:task.id,projectId:project.id});
+ setPhase(task.id,project.id,"coding",35);
+ event("agent.coding","Writing implementation",{taskId:task.id,projectId:project.id});
+ await applyPlan(plan,task,project);
+ setPhase(task.id,project.id,"testing",65);
+ event("agent.testing","Running project validation",{taskId:task.id,projectId:project.id});
+ let validation=await validatePlan(plan,task,project);
+ let repairAttempt=0;
+ while(!validation.success&&repairAttempt<MAX_REPAIR_ATTEMPTS){
+  repairAttempt++;
+  db.prepare("UPDATE tasks SET repair_attempts=?,phase='repairing',updated_at=? WHERE id=?").run(repairAttempt,now(),task.id);
+  setPhase(task.id,project.id,"repairing",Math.min(68+repairAttempt*6,85));
+  event("repair.started",`Autonomous repair ${repairAttempt}/${MAX_REPAIR_ATTEMPTS}`,{taskId:task.id,projectId:project.id,level:"warn",data:{failure:validation.failure}});
+  if(!AI_KEY)throw new Error(`Validation failed and AI repair requires OPENAI_API_KEY. ${validation.failure?.stderr||validation.failure?.stdout||""}`);
+  const repair=await repairPlan(task,project,validation.failure,repairAttempt);
+  memory(project.id,"repair",JSON.stringify({attempt:repairAttempt,analysis:repair.analysis}));
+  await applyPlan(repair,task,project);
+  setPhase(task.id,project.id,"retesting",80);
+  validation=await validatePlan(repair,task,project);
+ }
+ if(!validation.success)throw new Error(`Validation failed after ${repairAttempt} repair attempts.`);
+ memory(project.id,"validation",JSON.stringify(validation.results));
+ event("validation.passed","All project validation commands passed",{taskId:task.id,projectId:project.id});
+ await initializeGit(task,project);
+ const freshProject=db.prepare("SELECT * FROM projects WHERE id=?").get(project.id) as any;
+ const github=await publishToGitHub(task,freshProject);
+ setPhase(task.id,project.id,"finalizing",98);
+ return{summary:plan.summary,repairAttempts:repairAttempt,files:await walkFiles(project.workspace),validation:validation.results,github};
+}
+
+export async function executeTask(task:any){
+ const project=db.prepare("SELECT * FROM projects WHERE id=?").get(task.project_id) as any;
+ if(!project)throw new Error("Project not found.");
+ await mkdir(project.workspace,{recursive:true});
+ const mode=executionMode(project.id);
+ if(mode==="autonomous"){
+  const provider=getAIProvider();
+  if(!provider.configured)throw new AIProviderError(`AI provider "${provider.name}" is not configured.`,{provider:provider.name,retryable:true});
+ }
+ const started=now();
+ const isResume=task.phase==="resuming";
+ const startPhase=mode==="demo"?"planning":isResume?(project.phase&&project.phase!=="failed"?project.phase:"validation"):"architecture";
+ if(isResume){
+  db.prepare("UPDATE tasks SET status='running',phase=?,error=NULL,started_at=COALESCE(started_at,?),updated_at=? WHERE id=?").run(startPhase,started,started,task.id);
+  db.prepare("UPDATE projects SET status='active',phase=?,updated_at=? WHERE id=?").run(startPhase,started,project.id);
+  setWorker("busy",startPhase,task.id,project.id);
+  event("task.resuming",task.title,{taskId:task.id,projectId:project.id,data:{mode,attempts:task.attempts,repairAttempts:task.repair_attempts}});
+ }else{
+  db.prepare("UPDATE tasks SET status='running',phase=?,attempts=attempts+1,error=NULL,started_at=COALESCE(started_at,?),updated_at=? WHERE id=?").run(startPhase,started,started,task.id);
+  db.prepare("UPDATE projects SET status='active',phase=?,progress=?,updated_at=? WHERE id=?").run(startPhase,mode==="demo"?5:2,started,project.id);
+  setWorker("busy",startPhase,task.id,project.id);
+  event("task.started",task.title,{taskId:task.id,projectId:project.id,data:{mode}});
+ }
+ let result:Awaited<ReturnType<typeof executeDemoTask>>|Awaited<ReturnType<typeof executeAutonomousPipeline>>;
+ let summary:string|null;
+ if(mode==="demo"){
+  const demoResult=await executeDemoTask(task,project);
+  result=demoResult;
+  summary=demoResult.summary||null;
+ }else{
+  const autonomousResult=await executeAutonomousPipeline(task,project);
+  result=autonomousResult;
+  summary=autonomousResult.implementation||autonomousResult.plan||autonomousResult.architecture||null;
+ }
+ const completed=now();
+ db.prepare("UPDATE tasks SET status='completed',phase='completed',result=?,error=NULL,completed_at=?,updated_at=? WHERE id=?").run(JSON.stringify(result),completed,completed,task.id);
+ db.prepare("UPDATE projects SET status='completed',phase='completed',progress=100,summary=?,completed_at=?,updated_at=? WHERE id=?").run(summary||null,completed,completed,project.id);
+ memory(project.id,"task_result",JSON.stringify(result));
+ event("task.completed",`${task.title} completed`,{taskId:task.id,projectId:project.id,data:{mode}});
+ event("project.completed",`${project.name} completed successfully`,{taskId:task.id,projectId:project.id});
+}
+
+export function pauseTaskForAI(task:any,error:unknown){
+ const message=error instanceof Error?error.message:String(error);
+ const time=now();
+ db.prepare("UPDATE tasks SET status='paused',phase='waiting_ai',error=?,updated_at=? WHERE id=?").run(message,time,task.id);
+ db.prepare("UPDATE projects SET status='paused',phase='waiting_ai',updated_at=? WHERE id=?").run(time,task.project_id);
+ memory(task.project_id,"pause",JSON.stringify({reason:"ai_unavailable",message,time}));
+ event("task.paused",`Task paused while waiting for AI provider: ${message}`,{taskId:task.id,projectId:task.project_id,level:"warn",data:{reason:"ai_unavailable"}});
+ setWorker("online","idle");
+}
+
+export function resumeTask(taskId:string,reason="manual"){
+ const task=db.prepare("SELECT * FROM tasks WHERE id=?").get(taskId) as any;
+ if(!task)throw new Error("Task not found.");
+ if(task.status==="completed")throw new Error("Completed tasks cannot be resumed.");
+ if(task.status==="running")throw new Error("Running tasks cannot be resumed.");
+ const time=now();
+ db.prepare("UPDATE tasks SET status='queued',phase='resuming',error=NULL,updated_at=? WHERE id=?").run(time,task.id);
+ db.prepare("UPDATE projects SET status='queued',phase='resuming',updated_at=? WHERE id=?").run(time,task.project_id);
+ event("task.resumed",`Task queued for checkpoint resume`,{taskId:task.id,projectId:task.project_id,data:{reason}});
+ return{id:task.id,projectId:task.project_id,status:"queued",phase:"resuming"};
+}
+
+export async function failTask(task:any,error:unknown){
+ if(error instanceof AIProviderError&&error.retryable){
+  pauseTaskForAI(task,error);
+  return;
+ }
+ const message=error instanceof Error?error.message:String(error);
+ const current=db.prepare("SELECT * FROM tasks WHERE id=?").get(task.id) as any;
+ const retry=current.attempts<current.max_attempts&&!isPermanentAIError(error);
+ db.prepare("UPDATE tasks SET status=?,phase=?,error=?,updated_at=? WHERE id=?").run(retry?"queued":"failed",retry?"retrying":"failed",message,now(),task.id);
+ if(retry){
+  event("task.retry",`Task scheduled for retry: ${message}`,{taskId:task.id,projectId:task.project_id,level:"warn",data:{attempt:current.attempts,max:current.max_attempts}});
+ }else{
+  db.prepare("UPDATE projects SET status='failed',phase='failed',updated_at=? WHERE id=?").run(now(),task.project_id);
+  memory(task.project_id,"failure",message);
+  event("task.failed",message,{taskId:task.id,projectId:task.project_id,level:"error"});
+ }
+}
+
+
+============================================================
+FILE: src\core\worker.service.ts
+============================================================
+
+import {db} from "../database/database.js";
+import {executeTask,failTask} from "./task.service.js";
+import {setWorker} from "./telemetry.js";
+let running=false;
+export async function workerLoop(){
+ if(running)return;
+ const task=db.prepare("SELECT * FROM tasks WHERE status='queued' ORDER BY priority DESC,created_at ASC LIMIT 1").get() as any;
+ if(!task){setWorker("idle","waiting");return}
+ running=true;
+ try{await executeTask(task)}
+ catch(error){await failTask(task,error)}
+ finally{running=false;setWorker("idle","waiting")}
+}
+
+============================================================
+FILE: src\core\recovery.service.ts
+============================================================
+
+import {db} from "../database/database.js";
+import {
+ AI_RECOVERY_INTERVAL_MS,
+ now
+} from "../config/config.js";
+import {event,setWorker} from "./telemetry.js";
+import {
+ aiProviderHealth,
+ getAIProvider
+} from "../agent/provider.service.js";
+import {
+ providerCircuitStatus
+} from "./provider-circuit.service.js";
+import {resumeTask} from "./task.service.js";
+
+let checking=false;
+let lastCheck=0;
+
+export function recoverInterruptedTasks(){
+ const interrupted=db.prepare(
+  "SELECT * FROM tasks WHERE status='running' ORDER BY updated_at ASC"
+ ).all() as any[];
+
+ if(!interrupted.length)return 0;
+
+ const time=now();
+
+ for(const task of interrupted){
+  db.prepare(
+   "UPDATE tasks SET status='queued',phase='resuming',error=NULL,updated_at=? WHERE id=?"
+  ).run(time,task.id);
+
+  db.prepare(
+   "UPDATE projects SET status='queued',phase='resuming',updated_at=? WHERE id=?"
+  ).run(time,task.project_id);
+
+  event(
+   "task.recovered",
+   "Interrupted running task queued for checkpoint recovery",
+   {
+    taskId:task.id,
+    projectId:task.project_id,
+    level:"warn",
+    data:{previousPhase:task.phase}
+   }
+  );
+ }
+
+ setWorker("online","idle");
+
+ return interrupted.length;
+}
+
+export async function resumePausedAIJobs(){
+ if(checking)return;
+
+ const time=Date.now();
+
+ if(time-lastCheck<AI_RECOVERY_INTERVAL_MS)return;
+
+ const paused=db.prepare(
+  "SELECT * FROM tasks WHERE status='paused' AND phase='waiting_ai' ORDER BY updated_at ASC"
+ ).all() as any[];
+
+ if(!paused.length)return;
+
+ const provider=getAIProvider();
+ const before=providerCircuitStatus(provider.name);
+
+ if(
+  before.state==="open"&&
+  before.retryAt!==null&&
+  time<before.retryAt
+ ){
+  lastCheck=time;
+
+  event(
+   "ai.recovery.cooldown",
+   "AI recovery skipped while provider circuit is cooling down",
+   {
+    data:{
+     provider:provider.name,
+     paused:paused.length,
+     retryAt:new Date(before.retryAt).toISOString(),
+     remainingMs:before.retryAt-time
+    }
+   }
+  );
+
+  return;
+ }
+
+ checking=true;
+ lastCheck=time;
+
+ try{
+  event(
+   "ai.recovery.probe",
+   `Probing AI provider before resuming ${paused.length} paused task${paused.length===1?"":"s"}`,
+   {
+    data:{
+     provider:provider.name,
+     state:providerCircuitStatus(provider.name).state,
+     paused:paused.length
+    }
+   }
+  );
+
+  const health=await aiProviderHealth();
+  const after=providerCircuitStatus(provider.name);
+
+  if(!health.configured||after.state==="open"){
+   event(
+    "ai.recovery.wait",
+    "AI provider recovery probe failed",
+    {
+     level:"warn",
+     data:{
+      provider:provider.name,
+      model:health.model,
+      state:after.state,
+      failures:after.consecutiveFailures,
+      retryAt:after.retryAt
+       ?new Date(after.retryAt).toISOString()
+       :null
+     }
+    }
+   );
+
+   return;
+  }
+
+  let resumed=0;
+
+  for(const task of paused){
+   try{
+    resumeTask(
+     task.id,
+     "ai_provider_circuit_recovered"
+    );
+    resumed++;
+   }catch(error){
+    event(
+     "ai.recovery.task_error",
+     error instanceof Error
+      ?error.message
+      :String(error),
+     {
+      taskId:task.id,
+      projectId:task.project_id,
+      level:"warn"
+     }
+    );
+   }
+  }
+
+  event(
+   "ai.recovery.ready",
+   `AI provider recovered; ${resumed} task${resumed===1?"":"s"} requeued`,
+   {
+    data:{
+     provider:provider.name,
+     model:health.model,
+     state:providerCircuitStatus(provider.name).state,
+     count:resumed
+    }
+   }
+  );
+ }catch(error){
+  event(
+   "ai.recovery.error",
+   error instanceof Error
+    ?error.message
+    :String(error),
+   {level:"warn"}
+  );
+ }finally{
+  checking=false;
+ }
+}
+
+============================================================
+FILE: src\core\telemetry.ts
+============================================================
+
+import type {Response} from "express";
+import os from "node:os";
+import {db} from "../database/database.js";
+import {WORKER_ID,now} from "../config/config.js";
+
+const clients=new Set<Response>();
+
+export function addClient(client:Response){clients.add(client)}
+export function removeClient(client:Response){clients.delete(client)}
+
+export function broadcast(channel:string,payload:unknown){
+ const message=`data: ${JSON.stringify({channel,payload})}\n\n`;
+ for(const client of clients)client.write(message);
+}
+
+export function event(type:string,message:string,options:{taskId?:string;projectId?:string;level?:string;data?:unknown}={}){
+ const created=now();
+ const result=db.prepare("INSERT INTO events(type,worker_id,project_id,task_id,level,message,data,created_at) VALUES(?,?,?,?,?,?,?,?)").run(type,WORKER_ID,options.projectId||null,options.taskId||null,options.level||"info",message,JSON.stringify(options.data||{}),created);
+ const payload={id:Number(result.lastInsertRowid),type,worker_id:WORKER_ID,project_id:options.projectId||null,task_id:options.taskId||null,level:options.level||"info",message,data:options.data||{},created_at:created};
+ broadcast("event",payload);
+ return payload;
+}
+
+export function setWorker(status:string,phase:string,taskId:string|null=null,projectId:string|null=null){
+ const time=now();
+ db.prepare(`INSERT INTO workers(id,hostname,pid,status,phase,task_id,project_id,started_at,heartbeat_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,phase=excluded.phase,task_id=excluded.task_id,project_id=excluded.project_id,heartbeat_at=excluded.heartbeat_at`).run(WORKER_ID,os.hostname(),process.pid,status,phase,taskId,projectId,time,time);
+ broadcast("worker",{id:WORKER_ID,status,phase,task_id:taskId,project_id:projectId,heartbeat_at:time});
+}
+
+export function setPhase(taskId:string,projectId:string,phase:string,progress:number){
+ const time=now();
+ db.prepare("UPDATE tasks SET phase=?,updated_at=? WHERE id=?").run(phase,time,taskId);
+ db.prepare("UPDATE projects SET phase=?,progress=?,updated_at=? WHERE id=?").run(phase,progress,time,projectId);
+ setWorker("busy",phase,taskId,projectId);
+ broadcast("phase",{task_id:taskId,project_id:projectId,phase,progress,time});
+}
+
+============================================================
+FILE: src\api\routes.ts
+============================================================
+
+import express from "express";
+import path from "node:path";
+import {readFile} from "node:fs/promises";
+import {db} from "../database/database.js";
+import {createTask,resumeTask} from "../core/task.service.js";
+import {walkFiles,safeTarget} from "../runtime/filesystem.service.js";
+import {addClient,removeClient} from "../core/telemetry.js";
+import {VERSION,GITHUB_ENABLED,GITHUB_OWNER,GITHUB_VISIBILITY,WORKER_ID,now} from "../config/config.js";
+import {aiProviderStatus,aiProviderHealth,availableAIProviders} from "../agent/provider.service.js";
+import {providerCircuits} from "../core/provider-circuit.service.js";
+
+const DEMO_PROMPT="[VEYLITH_DEMO] Create and test the autonomous Veylith hello API.";
+
+export function createApp(){
+ const app=express();
+ app.use(express.json({limit:"5mb"}));
+ app.use(express.static(path.resolve("public")));
+
+ app.get("/api/health",(_req,res)=>{
+  res.json({name:"Veylith",version:VERSION,status:"online",ai:aiProviderStatus(),providerCircuits:providerCircuits(),github:{configured:GITHUB_ENABLED,owner:GITHUB_OWNER||null,visibility:GITHUB_VISIBILITY},worker:db.prepare("SELECT * FROM workers WHERE id=?").get(WORKER_ID),time:now()});
+ });
+
+ app.get("/api/ai",async(_req,res)=>{
+  try{res.json({active:await aiProviderHealth(),providers:availableAIProviders()})}
+  catch(error){res.status(500).json({error:error instanceof Error?error.message:String(error)})}
+ });
+
+ app.get("/api/dashboard",(_req,res)=>{
+  const workers=db.prepare("SELECT * FROM workers ORDER BY heartbeat_at DESC").all();
+  const projects=db.prepare("SELECT * FROM projects ORDER BY created_at DESC LIMIT 50").all();
+  const tasks=db.prepare("SELECT * FROM tasks ORDER BY created_at DESC LIMIT 100").all();
+  const events=db.prepare("SELECT * FROM events ORDER BY id DESC LIMIT 150").all().reverse();
+  const metrics=db.prepare("SELECT * FROM metrics ORDER BY id DESC LIMIT 120").all().reverse();
+  const stats=db.prepare(`SELECT COUNT(*) total,SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END) queued,SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) running,SUM(CASE WHEN status='paused' THEN 1 ELSE 0 END) paused,SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) completed,SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) failed,SUM(repair_attempts) repairs FROM tasks`).get();
+  res.json({version:VERSION,ai:aiProviderStatus(),providerCircuits:providerCircuits(),github:{configured:GITHUB_ENABLED,owner:GITHUB_OWNER||null,visibility:GITHUB_VISIBILITY},workers,projects,tasks,events,metrics,stats});
+ });
+
+ app.get("/api/events",(req,res)=>{
+  res.setHeader("Content-Type","text/event-stream");
+  res.setHeader("Cache-Control","no-cache");
+  res.setHeader("Connection","keep-alive");
+  res.flushHeaders();
+  addClient(res);
+  res.write(`data: ${JSON.stringify({channel:"connected",payload:{time:now(),version:VERSION}})}\n\n`);
+  req.on("close",()=>removeClient(res));
+ });
+
+ app.post("/api/tasks",(req,res)=>{
+  const prompt=String(req.body?.prompt||"").trim();
+  const name=String(req.body?.name||"").trim()||`Veylith Project ${Date.now()}`;
+  if(prompt.length<5){res.status(400).json({error:"Development request is required."});return}
+  try{res.status(201).json(createTask(name,prompt))}
+  catch(error){res.status(500).json({error:error instanceof Error?error.message:String(error)})}
+ });
+
+ app.post("/api/tasks/:id/resume",(req,res)=>{
+  try{res.json(resumeTask(req.params.id,"manual_api"))}
+  catch(error){res.status(400).json({error:error instanceof Error?error.message:String(error)})}
+ });
+
+ app.post("/api/demo",(_req,res)=>{
+  try{res.status(201).json(createTask(`Veylith Hello ${Date.now()}`,DEMO_PROMPT,"demo"))}
+  catch(error){res.status(500).json({error:error instanceof Error?error.message:String(error)})}
+ });
+
+ app.get("/api/projects/:id",(req,res)=>{
+  const project=db.prepare("SELECT * FROM projects WHERE id=?").get(req.params.id);
+  if(!project){res.status(404).json({error:"Project not found."});return}
+  res.json({
+   project,
+   tasks:db.prepare("SELECT * FROM tasks WHERE project_id=? ORDER BY created_at DESC").all(req.params.id),
+   memories:db.prepare("SELECT * FROM project_memory WHERE project_id=? ORDER BY id DESC").all(req.params.id),
+   executions:db.prepare("SELECT * FROM executions WHERE project_id=? ORDER BY id DESC").all(req.params.id),
+   events:db.prepare("SELECT * FROM events WHERE project_id=? ORDER BY id DESC LIMIT 200").all(req.params.id)
+  });
+ });
+
+ app.get("/api/projects/:id/files",async(req,res)=>{
+  const project=db.prepare("SELECT * FROM projects WHERE id=?").get(req.params.id) as any;
+  if(!project){res.status(404).json({error:"Project not found."});return}
+  res.json({project,files:await walkFiles(project.workspace)});
+ });
+
+ app.get("/api/projects/:id/file",async(req,res)=>{
+  const project=db.prepare("SELECT * FROM projects WHERE id=?").get(req.params.id) as any;
+  if(!project){res.status(404).json({error:"Project not found."});return}
+  try{
+   const relative=String(req.query.path||"");
+   res.json({path:relative,content:await readFile(safeTarget(project.workspace,relative),"utf8")});
+  }catch(error){
+   res.status(404).json({error:error instanceof Error?error.message:"File not found."});
+  }
+ });
+
+ app.use((_req,res)=>res.sendFile(path.resolve("public/index.html")));
+ return app;
+}
+
+
+
+============================================================
+FILE: src\server.ts
+============================================================
+
+import "dotenv/config";
+import {createApp} from "./api/routes.js";
+import {db} from "./database/database.js";
+import {workerLoop} from "./core/worker.service.js";
+import {recoverInterruptedTasks,resumePausedAIJobs} from "./core/recovery.service.js";
+import {collectMetrics} from "./monitoring/metrics.service.js";
+import {event,setWorker} from "./core/telemetry.js";
+import {VERSION,PORT,POLL,METRIC_INTERVAL,WORKER_ID,GITHUB_ENABLED,GITHUB_OWNER,ROOT,DB_PATH} from "./config/config.js";
+import {aiProviderStatus} from "./agent/provider.service.js";
+
+recoverInterruptedTasks();
+
+const app=createApp();
+const ai=aiProviderStatus();
+
+setWorker("online","booting");
+
+event("system.started",`Veylith Core v${VERSION} started`,{
+ data:{
+  pid:process.pid,
+  worker:WORKER_ID,
+  aiConfigured:ai.configured,
+  aiProvider:ai.provider,
+  aiModel:ai.model,
+  githubConfigured:GITHUB_ENABLED
+ }
+});
+
+const server=app.listen(PORT,()=>{
+ console.log("");
+ console.log("==========================================");
+ console.log(` VEYLITH CORE v${VERSION}`);
+ console.log("==========================================");
+ console.log(` Control Center : http://localhost:${PORT}`);
+ console.log(` Worker         : ${WORKER_ID}`);
+ console.log(` AI             : ${ai.provider} / ${ai.model} ${ai.configured?"CONFIGURED":"NOT CONFIGURED"}`);
+ console.log(` GitHub         : ${GITHUB_ENABLED?`${GITHUB_OWNER} READY`:"NOT CONFIGURED"}`);
+ console.log(` Workspace      : ${ROOT}`);
+ console.log(` Database       : ${DB_PATH}`);
+ console.log("==========================================");
+ console.log("");
+ setWorker("online","idle");
+ void startBackgroundServices();
+});
+
+let workerRunning=false;
+let metricsRunning=false;
+let recoveryRunning=false;
+
+async function runWorker(){
+ if(workerRunning)return;
+ workerRunning=true;
+ try{
+  await workerLoop();
+ }catch(error){
+  event(
+   "worker.error",
+   error instanceof Error?error.message:String(error),
+   {level:"error"}
+  );
+ }finally{
+  workerRunning=false;
+ }
+}
+
+async function runMetrics(){
+ if(metricsRunning)return;
+ metricsRunning=true;
+ try{
+  await collectMetrics();
+ }catch(error){
+  event(
+   "metrics.error",
+   error instanceof Error?error.message:String(error),
+   {level:"warn"}
+  );
+ }finally{
+  metricsRunning=false;
+ }
+}
+
+async function runRecovery(){
+ if(recoveryRunning)return;
+ recoveryRunning=true;
+ try{
+  await resumePausedAIJobs();
+ }catch(error){
+  event(
+   "recovery.error",
+   error instanceof Error?error.message:String(error),
+   {level:"warn"}
+  );
+ }finally{
+  recoveryRunning=false;
+ }
+}
+
+async function startBackgroundServices(){
+ void runMetrics();
+ void runWorker();
+ void runRecovery();
+
+ setInterval(()=>{
+  void runWorker();
+ },POLL);
+
+ setInterval(()=>{
+  void runMetrics();
+ },METRIC_INTERVAL);
+
+ setInterval(()=>{
+  void runRecovery();
+ },5000);
+}
+
+let shuttingDown=false;
+
+function shutdown(signal:string){
+ if(shuttingDown)return;
+ shuttingDown=true;
+
+ console.log(`Veylith shutting down (${signal})...`);
+
+ try{
+  event("system.stopped",`Veylith received ${signal}`);
+ }catch{}
+
+ server.close(()=>{
+  try{db.close()}catch{}
+  process.exit(0);
+ });
+
+ setTimeout(()=>{
+  try{db.close()}catch{}
+  process.exit(1);
+ },5000).unref();
+}
+
+process.on("SIGINT",()=>shutdown("SIGINT"));
+process.on("SIGTERM",()=>shutdown("SIGTERM"));
+
+============================================================
+FILE: package.json
+============================================================
+
+{
+  "name": "veylith",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "build": "tsc",
+    "prod": "node dist/server.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0",
+    "simple-git": "^3.36.0",
+    "systeminformation": "^5.27.7"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.5.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}
+
+============================================================
+FILE: tsconfig.json
+============================================================
+
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": "src",
+    "outDir": "dist",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "sourceMap": true
+  },
+  "include": ["src/**/*.ts"]
+}
