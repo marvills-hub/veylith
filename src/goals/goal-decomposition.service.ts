@@ -1,4 +1,4 @@
-﻿import {getAIProvider} from "../agent/provider.service.js";
+import {getAIProvider} from "../agent/provider.service.js";
 import {getProjectGoal} from "./goal.repository.js";
 import {createGoalTaskGraph,normalizeProposedTaskGraph} from "./goal-task-graph.service.js";
 import type {GoalTaskGraph,ProposedGoalTaskGraph} from "./goal-task-graph.types.js";
@@ -25,7 +25,7 @@ Return ONLY valid JSON:
    "key":"short-stable-key",
    "title":"work item title",
    "description":"precise engineering outcome",
-   "kind":"analysis|architecture|implementation|test|documentation|integration|delivery|other",
+   "kind":"analysis|architecture|implementation|test|review|documentation|integration|delivery|other",
    "priority":50,
    "dependencies":["other-work-key"],
    "requirementIds":["exact requirement id"],
@@ -44,6 +44,8 @@ Rules:
 - Separate implementation and validation when that improves recoverability.
 - Architecture or analysis work must precede implementation when genuinely required.
 - Validation must depend on the behavior it validates.
+- Review work should follow implementation and validation when independent review is required.
+- Review work should follow implementation and validation when independent review is required.
 - Documentation must depend on the implementation it documents when applicable.
 - Delivery must be last when delivery work is required.
 - Do not create artificial tasks merely to increase task count.
@@ -86,3 +88,7 @@ export async function buildGoalTaskGraphWithAI(
  const proposal=await decomposeGoalWithAI(goalId,taskId);
  return createGoalTaskGraph(goalId,proposal);
 }
+
+
+
+

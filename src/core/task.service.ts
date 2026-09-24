@@ -1,4 +1,4 @@
-﻿import {mkdir} from "node:fs/promises";
+import {mkdir} from "node:fs/promises";
 import crypto from "node:crypto";
 import path from "node:path";
 import {db,memory} from "../database/database.js";
@@ -11,15 +11,41 @@ import {executeAutonomousPipeline} from "../orchestration/orchestrator.service.j
 import {getAIProvider} from "../agent/provider.service.js";
 import {AIProviderError,isPermanentAIError} from "./ai-error.service.js";
 import {enqueueTask,pauseTaskJob,resumeTaskJob} from "../jobs/job.service.js";
+import {bootstrapAutonomousProject} from "../goals/autonomous-project.service.js";
 
 const makeId=(prefix:string)=>`${prefix}_${crypto.randomUUID().replace(/-/g,"").slice(0,16)}`;
 const makeSlug=(value:string)=>value.toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,55)||`project-${Date.now()}`;
 
-export function createTask(name:string,prompt:string,mode:"autonomous"|"demo"="autonomous"){
- if(mode==="autonomous"){
-  const provider=getAIProvider();
-  if(!provider.configured)throw new Error(`AI provider "${provider.name}" is not configured. Configure an AI provider before creating autonomous tasks.`);
- }
+export async function createAutonomousProject(name:string,prompt:string){
+ const normalizedName=String(name||"").trim();
+ const normalizedPrompt=String(prompt||"").trim();
+ if(!normalizedName)throw new Error("Project name is required.");
+ if(normalizedPrompt.length<5)throw new Error("Development request is required.");
+ const provider=getAIProvider();
+ if(!provider.configured)throw new Error(`AI provider "${provider.name}" is not configured. Configure an AI provider before creating autonomous projects.`);
+ event("autonomous.project_requested",normalizedName,{component:"v1-orchestration",data:{requestLength:normalizedPrompt.length}});
+ const result=await bootstrapAutonomousProject({
+  name:normalizedName,
+  request:normalizedPrompt
+ });
+ event("autonomous.project_bootstrapped",normalizedName,{
+  projectId:result.projectId,
+  component:"v1-orchestration",
+  data:{
+   goalId:result.goalId,
+   graphItems:result.graphItems,
+   initialDispatches:result.initialDispatches,
+   clarificationNeeded:result.clarificationNeeded,
+   status:result.status
+  }
+ });
+ return{
+  ...result,
+  mode:"autonomous-v1" as const
+ };
+}
+
+export function createTask(name:string,prompt:string,mode:"demo"="demo"){
  const projectId=makeId("prj"),taskId=makeId("tsk"),created=now();
  let slug=makeSlug(name);
  if(db.prepare("SELECT id FROM projects WHERE slug=?").get(slug))slug=`${slug}-${Date.now()}`;
@@ -162,6 +188,3 @@ export async function failTask(task:any,error:unknown){
   event("task.failed",message,{taskId:task.id,projectId:task.project_id,level:"error"});
  }
 }
-
-
-

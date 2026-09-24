@@ -1,0 +1,2241 @@
+VEYLITH v1.0 BATCH 7.1 TEAM + SESSION CONTRACTS
+
+
+============================================================
+FILE: src\team\goal-team-execution.service.ts
+============================================================
+import {db} from "../database/database.js";
+import {now} from "../config/config.js";
+import {getProjectGoal} from "../goals/goal.repository.js";
+import {loadGoalTaskGraph,refreshGoalTaskReadiness} from "../goals/goal-task-graph.service.js";
+import {updateGoalWorkStatus} from "../goals/goal-task-graph.repository.js";
+import {
+ getGoalWorkDispatch,
+ listGoalWorkDispatches
+} from "../goals/goal-work-dispatch.repository.js";
+import {
+ synchronizeGoalWorkDispatches,
+ dispatchRunnableGoalWork
+} from "../goals/goal-work-dispatch.service.js";
+import {
+ assignRunnableGoalTeam,
+ synchronizeGoalTeam
+} from "./team-assignment.service.js";
+import {
+ getActiveWorkAssignment,
+ listGoalAssignments,
+ setAgentAssignmentStatus
+} from "./team-assignment.repository.js";
+import {bindIncomingHandoffs} from "./handoff.service.js";
+
+export type GoalExecutionState={
+ goalId:string;
+ projectId:string;
+ total:number;
+ pending:number;
+ ready:number;
+ running:number;
+ blocked:number;
+ completed:number;
+ failed:number;
+ cancelled:number;
+ terminal:boolean;
+ success:boolean;
+};
+
+function dispatchByTask(taskId:string){
+ return db.prepare(`
+  SELECT *
+  FROM goal_work_dispatches
+  WHERE task_id=?
+  LIMIT 1
+ `).get(taskId) as any;
+}
+
+export function goalExecutionForTask(taskId:string){
+ const dispatch=dispatchByTask(taskId);
+ if(!dispatch)return null;
+ const goal=getProjectGoal(String(dispatch.goal_id));
+ if(!goal)return null;
+ return{
+  goal,
+  dispatch,
+  workItemId:String(dispatch.work_item_id)
+ };
+}
+
+export function isGoalManagedTask(taskId:string){
+ return Boolean(dispatchByTask(taskId));
+}
+
+export function goalExecutionState(goalId:string):GoalExecutionState{
+ const goal=getProjectGoal(goalId);
+ if(!goal)throw new Error(`Goal not found: ${goalId}`);
+ const graph=loadGoalTaskGraph(goalId);
+ const count=(status:string)=>graph.items.filter(item=>item.status===status).length;
+ const completed=count("completed");
+ const failed=count("failed");
+ const cancelled=count("cancelled");
+ const blocked=count("blocked");
+ const terminal=graph.items.length>0&&graph.items.every(item=>
+  ["completed","failed","cancelled","blocked"].includes(item.status)
+ );
+ return{
+  goalId,
+  projectId:goal.projectId,
+  total:graph.items.length,
+  pending:count("pending"),
+  ready:count("ready"),
+  running:count("running"),
+  blocked,
+  completed,
+  failed,
+  cancelled,
+  terminal,
+  success:graph.items.length>0&&completed===graph.items.length
+ };
+}
+
+function updateProjectProgress(goalId:string){
+ const state=goalExecutionState(goalId);
+ const progress=state.total
+  ?Math.round((state.completed/state.total)*100)
+  :0;
+ const time=now();
+ if(state.success){
+  db.prepare(`
+   UPDATE projects
+   SET status='completed',
+       phase='completed',
+       progress=100,
+       completed_at=COALESCE(completed_at,?),
+       updated_at=?
+   WHERE id=?
+  `).run(time,time,state.projectId);
+ }else if(state.terminal){
+  db.prepare(`
+   UPDATE projects
+   SET status='failed',
+       phase='failed',
+       progress=?,
+       updated_at=?
+   WHERE id=?
+  `).run(progress,time,state.projectId);
+ }else{
+  db.prepare(`
+   UPDATE projects
+   SET status='active',
+       phase='autonomous_development',
+       progress=?,
+       completed_at=NULL,
+       updated_at=?
+   WHERE id=?
+  `).run(progress,time,state.projectId);
+ }
+ return goalExecutionState(goalId);
+}
+
+function assignmentForWork(goalId:string,workItemId:string){
+ return getActiveWorkAssignment(workItemId)||
+  listGoalAssignments(goalId)
+   .filter(item=>item.workItemId===workItemId)
+   .sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0]||
+  null;
+}
+
+export function prepareGoalTaskExecution(taskId:string){
+ const managed=goalExecutionForTask(taskId);
+ if(!managed)return null;
+ const {goal,workItemId}=managed;
+ const work=loadGoalTaskGraph(goal.id).items.find(item=>item.id===workItemId);
+ if(!work)throw new Error(`Goal work item not found: ${workItemId}`);
+ if(work.status==="completed"||work.status==="failed"||work.status==="cancelled"){
+  return{
+   goalId:goal.id,
+   workItemId,
+   assignment:null,
+   alreadyTerminal:true
+  };
+ }
+ if(work.status!=="running")updateGoalWorkStatus(work.id,"running");
+ synchronizeGoalTeam(goal.id);
+ let assignment=assignmentForWork(goal.id,work.id);
+ if(!assignment){
+  assignRunnableGoalTeam(goal.id);
+  assignment=assignmentForWork(goal.id,work.id);
+ }
+ if(assignment){
+  if(assignment.status==="assigned"){
+   setAgentAssignmentStatus(assignment.id,"working");
+  }
+  bindIncomingHandoffs(work.id,assignment.id);
+ }
+ updateProjectProgress(goal.id);
+ return{
+  goalId:goal.id,
+  workItemId:work.id,
+  assignment,
+  alreadyTerminal:false
+ };
+}
+
+export function completeGoalTaskExecution(taskId:string){
+ const managed=goalExecutionForTask(taskId);
+ if(!managed)return null;
+ const {goal,workItemId}=managed;
+ const work=loadGoalTaskGraph(goal.id).items.find(item=>item.id===workItemId);
+ if(!work)throw new Error(`Goal work item not found: ${workItemId}`);
+ if(work.status!=="completed")updateGoalWorkStatus(work.id,"completed");
+ synchronizeGoalWorkDispatches(goal.id);
+ synchronizeGoalTeam(goal.id);
+ const assignment=assignmentForWork(goal.id,work.id);
+ if(assignment&&assignment.status!=="completed"){
+  setAgentAssignmentStatus(assignment.id,"completed");
+ }
+ refreshGoalTaskReadiness(goal.id);
+ synchronizeGoalTeam(goal.id);
+ const assignments=assignRunnableGoalTeam(goal.id);
+ const dispatched=dispatchRunnableGoalWork(goal.id);
+ for(const item of assignments){
+  try{bindIncomingHandoffs(item.workItemId,item.id);}catch{}
+ }
+ const state=updateProjectProgress(goal.id);
+ return{
+  goalId:goal.id,
+  workItemId:work.id,
+  assignments,
+  dispatched,
+  state
+ };
+}
+
+export function failGoalTaskExecution(taskId:string,status:"failed"|"cancelled"="failed"){
+ const managed=goalExecutionForTask(taskId);
+ if(!managed)return null;
+ const {goal,workItemId}=managed;
+ const work=loadGoalTaskGraph(goal.id).items.find(item=>item.id===workItemId);
+ if(!work)throw new Error(`Goal work item not found: ${workItemId}`);
+ if(work.status!==status)updateGoalWorkStatus(work.id,status);
+ synchronizeGoalWorkDispatches(goal.id);
+ synchronizeGoalTeam(goal.id);
+ const assignment=assignmentForWork(goal.id,work.id);
+ if(assignment&&!["failed","cancelled","completed"].includes(assignment.status)){
+  setAgentAssignmentStatus(
+   assignment.id,
+   status==="cancelled"?"cancelled":"failed"
+  );
+ }
+ refreshGoalTaskReadiness(goal.id);
+ synchronizeGoalTeam(goal.id);
+ const state=updateProjectProgress(goal.id);
+ return{goalId:goal.id,workItemId:work.id,state};
+}
+
+export function synchronizeGoalExecution(goalId:string){
+ synchronizeGoalWorkDispatches(goalId);
+ refreshGoalTaskReadiness(goalId);
+ synchronizeGoalTeam(goalId);
+ const assignments=assignRunnableGoalTeam(goalId);
+ const dispatched=dispatchRunnableGoalWork(goalId);
+ for(const item of assignments){
+  try{bindIncomingHandoffs(item.workItemId,item.id);}catch{}
+ }
+ const state=updateProjectProgress(goalId);
+ return{assignments,dispatched,state};
+}
+
+export function goalExecutionSnapshot(goalId:string){
+ const graph=loadGoalTaskGraph(goalId);
+ const dispatches=listGoalWorkDispatches(goalId);
+ const assignments=listGoalAssignments(goalId);
+ return{
+  state:goalExecutionState(goalId),
+  graph,
+  dispatches,
+  assignments
+ };
+}
+
+============================================================
+FILE: src\team\goal-role-executor.service.ts
+============================================================
+import {synchronizeTaskDevelopment} from "../development/development-lifecycle.service.js";
+import crypto from "node:crypto";
+import {db,memory} from "../database/database.js";
+import {now} from "../config/config.js";
+import {event} from "../core/telemetry.js";
+import {designArchitecture} from "../agent/architect.service.js";
+import {createDevelopmentPlan} from "../agent/development-planner.service.js";
+import {developProject} from "../agent/developer.service.js";
+import {reviewProject} from "../agent/reviewer.service.js";
+import {applyDevelopment,validateDevelopment} from "../orchestration/pipeline.service.js";
+import {initializeGit,publishToGitHub} from "../git/git.service.js";
+import {buildSharedProjectContext} from "./shared-context.service.js";
+import {buildAgentProjectContext} from "../context/agent-project-context.service.js";
+import {synchronizeRepositoryLearning} from "../evolution/repository-learning-lifecycle.service.js";
+import {
+ prepareGoalTaskExecution,
+ completeGoalTaskExecution,
+ goalExecutionForTask
+} from "./goal-team-execution.service.js";
+import {consumeIncomingHandoffs,createWorkHandoff,deliverWorkHandoff} from "./handoff.service.js";
+import {listGoalHandoffs} from "./handoff.repository.js";
+import {loadGoalTaskGraph} from "../goals/goal-task-graph.service.js";
+import {recoverGoalWork} from "./team-recovery.service.js";
+import type {AgentRole} from "./team.types.js";
+import type {
+ ArchitectureResult,
+ DevelopmentPlan,
+ DevelopmentResult
+} from "../orchestration/pipeline.types.js";
+
+export type GoalRoleResultStatus="running"|"completed"|"failed";
+
+export interface GoalRoleResult{
+ id:string;
+ goalId:string;
+ projectId:string;
+ workItemId:string;
+ assignmentId:string;
+ taskId:string;
+ role:AgentRole;
+ status:GoalRoleResultStatus;
+ summary:string|null;
+ result:any;
+ error:string|null;
+ startedAt:string;
+ completedAt:string|null;
+ updatedAt:string;
+}
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS goal_role_results(
+ id TEXT PRIMARY KEY,
+ goal_id TEXT NOT NULL,
+ project_id TEXT NOT NULL,
+ work_item_id TEXT NOT NULL,
+ assignment_id TEXT NOT NULL,
+ task_id TEXT NOT NULL,
+ role TEXT NOT NULL,
+ status TEXT NOT NULL,
+ summary TEXT,
+ result_json TEXT,
+ error TEXT,
+ started_at TEXT NOT NULL,
+ completed_at TEXT,
+ updated_at TEXT NOT NULL,
+ UNIQUE(assignment_id)
+);
+CREATE INDEX IF NOT EXISTS idx_goal_role_results_goal
+ ON goal_role_results(goal_id);
+CREATE INDEX IF NOT EXISTS idx_goal_role_results_project
+ ON goal_role_results(project_id);
+CREATE INDEX IF NOT EXISTS idx_goal_role_results_work
+ ON goal_role_results(work_item_id);
+CREATE INDEX IF NOT EXISTS idx_goal_role_results_task
+ ON goal_role_results(task_id);
+CREATE INDEX IF NOT EXISTS idx_goal_role_results_status
+ ON goal_role_results(status);
+`);
+
+function parseJSON(value:any){
+ if(value===null||value===undefined||value==="")return null;
+ try{return JSON.parse(String(value));}catch{return null;}
+}
+
+function mapResult(row:any):GoalRoleResult{
+ return{
+  id:String(row.id),
+  goalId:String(row.goal_id),
+  projectId:String(row.project_id),
+  workItemId:String(row.work_item_id),
+  assignmentId:String(row.assignment_id),
+  taskId:String(row.task_id),
+  role:row.role,
+  status:row.status,
+  summary:row.summary?String(row.summary):null,
+  result:parseJSON(row.result_json),
+  error:row.error?String(row.error):null,
+  startedAt:String(row.started_at),
+  completedAt:row.completed_at?String(row.completed_at):null,
+  updatedAt:String(row.updated_at)
+ };
+}
+
+export function getGoalRoleResult(id:string){
+ const row=db.prepare("SELECT * FROM goal_role_results WHERE id=?").get(id);
+ return row?mapResult(row):null;
+}
+
+export function getAssignmentRoleResult(assignmentId:string){
+ const row=db.prepare(`
+  SELECT *
+  FROM goal_role_results
+  WHERE assignment_id=?
+  LIMIT 1
+ `).get(assignmentId);
+ return row?mapResult(row):null;
+}
+
+export function getWorkRoleResult(workItemId:string){
+ const row=db.prepare(`
+  SELECT *
+  FROM goal_role_results
+  WHERE work_item_id=?
+  ORDER BY started_at DESC
+  LIMIT 1
+ `).get(workItemId);
+ return row?mapResult(row):null;
+}
+
+export function listGoalRoleResults(goalId:string){
+ return(db.prepare(`
+  SELECT *
+  FROM goal_role_results
+  WHERE goal_id=?
+  ORDER BY started_at,id
+ `).all(goalId) as any[]).map(mapResult);
+}
+
+export function deleteGoalRoleResults(goalId:string){
+ return Number(
+  db.prepare("DELETE FROM goal_role_results WHERE goal_id=?").run(goalId).changes
+ );
+}
+
+function beginRoleResult(input:{
+ goalId:string;
+ projectId:string;
+ workItemId:string;
+ assignmentId:string;
+ taskId:string;
+ role:AgentRole;
+}){
+ const existing=getAssignmentRoleResult(input.assignmentId);
+ if(existing)return existing;
+ const time=now();
+ const id=`rrs_${crypto.randomBytes(8).toString("hex")}`;
+ db.prepare(`
+  INSERT INTO goal_role_results(
+   id,goal_id,project_id,work_item_id,assignment_id,task_id,
+   role,status,summary,result_json,error,started_at,completed_at,updated_at
+  ) VALUES(?,?,?,?,?,?,?,'running',NULL,NULL,NULL,?,NULL,?)
+ `).run(
+  id,
+  input.goalId,
+  input.projectId,
+  input.workItemId,
+  input.assignmentId,
+  input.taskId,
+  input.role,
+  time,
+  time
+ );
+ return getGoalRoleResult(id)!;
+}
+
+function completeRoleResult(id:string,summary:string,result:any){
+ const time=now();
+ db.prepare(`
+  UPDATE goal_role_results
+  SET status='completed',
+      summary=?,
+      result_json=?,
+      error=NULL,
+      completed_at=COALESCE(completed_at,?),
+      updated_at=?
+  WHERE id=?
+ `).run(
+  summary||null,
+  JSON.stringify(result??null),
+  time,
+  time,
+  id
+ );
+ return getGoalRoleResult(id)!;
+}
+
+function failRoleResult(id:string,error:unknown){
+ const message=error instanceof Error?error.message:String(error);
+ db.prepare(`
+  UPDATE goal_role_results
+  SET status='failed',error=?,updated_at=?
+  WHERE id=?
+ `).run(message,now(),id);
+ return getGoalRoleResult(id)!;
+}
+
+function project(projectId:string){
+ const row=db.prepare("SELECT * FROM projects WHERE id=?").get(projectId) as any;
+ if(!row)throw new Error(`Project not found: ${projectId}`);
+ return row;
+}
+
+function resultSummary(role:AgentRole,result:any){
+ if(result?.summary)return String(result.summary);
+ if(role==="tester"){
+  return result?.success
+   ?"Validation completed successfully."
+   :"Validation failed.";
+ }
+ if(role==="delivery"){
+  return "Repository delivery completed.";
+ }
+ return `${role} work completed.`;
+}
+
+function dependencyResults(goalId:string,workItemId:string){
+ const graph=loadGoalTaskGraph(goalId);
+ const work=graph.items.find(item=>item.id===workItemId);
+ if(!work)throw new Error(`Goal work item not found: ${workItemId}`);
+ const keys=new Set(work.dependencies);
+ return graph.items
+  .filter(item=>keys.has(item.key))
+  .map(item=>({
+   work:item,
+   roleResult:getWorkRoleResult(item.id)
+  }));
+}
+
+function findResult<T>(
+ dependencies:ReturnType<typeof dependencyResults>,
+ predicate:(result:GoalRoleResult)=>boolean
+):T|null{
+ for(const dependency of dependencies){
+  const result=dependency.roleResult;
+  if(result&&result.status==="completed"&&predicate(result)){
+   return result.result as T;
+  }
+ }
+ return null;
+}
+
+function architectureFrom(
+ dependencies:ReturnType<typeof dependencyResults>
+):ArchitectureResult|null{
+ for(const dependency of dependencies){
+  const record=dependency.roleResult;
+  if(!record||record.status!=="completed")continue;
+  const raw=record.result;
+  if(record.role==="architect"&&raw?.architecture)return raw.architecture;
+  if(raw?.architecture?.summary&&Array.isArray(raw.architecture?.structure)){
+   return raw.architecture;
+  }
+ }
+ return null;
+}
+
+function planFrom(
+ dependencies:ReturnType<typeof dependencyResults>
+):DevelopmentPlan|null{
+ for(const dependency of dependencies){
+  const record=dependency.roleResult;
+  if(!record||record.status!=="completed")continue;
+  const raw=record.result;
+  if(raw?.plan?.summary&&Array.isArray(raw.plan?.files))return raw.plan;
+  if(record.role==="planner"&&raw?.summary&&Array.isArray(raw?.files))return raw;
+ }
+ return null;
+}
+
+function developmentFrom(
+ dependencies:ReturnType<typeof dependencyResults>
+):DevelopmentResult|null{
+ for(const dependency of dependencies){
+  const record=dependency.roleResult;
+  if(!record||record.status!=="completed")continue;
+  const raw=record.result;
+  if(raw?.development?.summary&&Array.isArray(raw.development?.files)){
+   return raw.development;
+  }
+  if(
+   record.role==="developer"&&
+   raw?.summary&&
+   Array.isArray(raw?.files)&&
+   Array.isArray(raw?.commands)
+  ){
+   return raw;
+  }
+ }
+ return null;
+}
+
+function validationFrom(dependencies:ReturnType<typeof dependencyResults>){
+ for(const dependency of dependencies){
+  const record=dependency.roleResult;
+  if(!record||record.status!=="completed")continue;
+  if(record.result?.validation)return record.result.validation;
+  if(record.role==="tester"&&typeof record.result?.success==="boolean"){
+   return record.result;
+  }
+ }
+ return null;
+}
+
+function syntheticArchitecture(context:any):ArchitectureResult{
+ return{
+  summary:`Use the existing repository architecture for ${context.work.title}.`,
+  stack:context.repository?.profile?.frameworks??[],
+  structure:context.repository?.context?.selectedFiles?.map((file:any)=>file.path)??[],
+  decisions:["Preserve the existing repository architecture and make the smallest required change."],
+  risks:[]
+ };
+}
+
+async function executeArchitect(task:any,projectRow:any){
+ const architecture=await designArchitecture(task,projectRow);
+ return{
+  summary:architecture.summary,
+  architecture
+ };
+}
+
+async function executePlanner(
+ task:any,
+ projectRow:any,
+ context:any,
+ dependencies:ReturnType<typeof dependencyResults>
+){
+ const architecture=architectureFrom(dependencies)||syntheticArchitecture(context);
+ const plan=await createDevelopmentPlan(task,projectRow,architecture);
+ return{
+  summary:plan.summary,
+  architecture,
+  plan
+ };
+}
+
+async function executeDeveloper(
+ task:any,
+ projectRow:any,
+ context:any,
+ dependencies:ReturnType<typeof dependencyResults>
+){
+ const architecture=architectureFrom(dependencies)||syntheticArchitecture(context);
+ const existingPlan=planFrom(dependencies);
+ const plan=existingPlan||await createDevelopmentPlan(task,projectRow,architecture);
+ const development=await developProject(task,projectRow,architecture,plan);
+ await applyDevelopment(development,task,projectRow,plan);
+ return{
+  summary:development.summary,
+  architecture,
+  plan,
+  development
+ };
+}
+
+async function executeTester(
+ task:any,
+ projectRow:any,
+ dependencies:ReturnType<typeof dependencyResults>
+){
+ const development=developmentFrom(dependencies);
+ if(!development){
+  throw new Error("Tester requires a completed developer result with validation commands.");
+ }
+ let validation=await validateDevelopment(development,task,projectRow);
+ let finalDevelopment=development;
+ if(!validation.success){
+  const managed=goalExecutionForTask(task.id);
+  const assignment=managed
+   ?db.prepare(`
+     SELECT *
+     FROM agent_assignments
+     WHERE goal_id=? AND work_item_id=? AND status='working'
+     ORDER BY created_at DESC
+     LIMIT 1
+    `).get(managed.goal.id,managed.workItemId) as any
+   :null;
+  const context=managed
+   ?await buildSharedProjectContext({
+     goalId:managed.goal.id,
+     workItemId:managed.workItemId,
+     workspace:projectRow.workspace
+    })
+   :null;
+  const dependencies=managed
+   ?dependencyResults(managed.goal.id,managed.workItemId)
+   :[];
+  const architecture=architectureFrom(dependencies)||
+   (context?syntheticArchitecture(context):null);
+  const plan=planFrom(dependencies);
+  if(!managed||!assignment||!architecture||!plan){
+   const failure=validation.failure;
+   throw new Error(
+    `Validation failed: ${failure?.command||"command"} ${(failure?.args||[]).join(" ")} | ${failure?.stderr||failure?.stdout||"unknown failure"}`
+   );
+  }
+  const recovered=await recoverGoalWork({
+   goalId:managed.goal.id,
+   projectId:task.project_id,
+   workItemId:managed.workItemId,
+   assignmentId:String(assignment.id),
+   task,
+   project:projectRow,
+   architecture,
+   plan,
+   development,
+   failure:validation
+  });
+  if(!recovered.recovered){
+   const failure=recovered.validation?.failure;
+   throw new Error(
+    `Team recovery exhausted: ${failure?.stderr||failure?.stdout||"validation still failing"}`
+   );
+  }
+  finalDevelopment=recovered.development;
+  validation=recovered.validation;
+ }
+ return{
+  summary:"Validation completed successfully.",
+  development:{
+   summary:finalDevelopment.summary,
+   files:finalDevelopment.files.map(file=>file.path),
+   commands:finalDevelopment.commands
+  },
+  validation,
+  recovered:finalDevelopment!==development
+ };
+}
+
+async function executeReviewer(
+ task:any,
+ projectRow:any,
+ context:any,
+ dependencies:ReturnType<typeof dependencyResults>
+){
+ const architecture=architectureFrom(dependencies)||syntheticArchitecture(context);
+ const plan=planFrom(dependencies);
+ const development=developmentFrom(dependencies);
+ const validation=validationFrom(dependencies);
+ if(!plan)throw new Error("Reviewer requires a development plan.");
+ if(!development)throw new Error("Reviewer requires a development result.");
+ if(!validation)throw new Error("Reviewer requires validation evidence.");
+ const review=await reviewProject(
+  task,
+  projectRow,
+  architecture,
+  plan,
+  development,
+  validation
+ );
+ if(!review.approved){
+  throw new Error(
+   `Review rejected: ${review.summary}${review.issues?.length?` | ${review.issues.join("; ")}`:""}`
+  );
+ }
+ return{
+  summary:review.summary,
+  architecture,
+  plan,
+  development:{
+   summary:development.summary,
+   files:development.files.map(file=>file.path),
+   commands:development.commands
+  },
+  validation,
+  review
+ };
+}
+
+async function executeDelivery(task:any,projectRow:any){
+ const git=await initializeGit(task,projectRow);
+ const fresh=project(projectRow.id);
+ const github=await publishToGitHub(task,fresh);
+ return{
+  summary:"Git and GitHub delivery completed.",
+  git,
+  github
+ };
+}
+
+async function executeRole(
+ role:AgentRole,
+ task:any,
+ projectRow:any,
+ context:any,
+ dependencies:ReturnType<typeof dependencyResults>
+){
+ switch(role){
+  case "architect":
+   return executeArchitect(task,projectRow);
+  case "planner":
+   return executePlanner(task,projectRow,context,dependencies);
+  case "developer":
+   return executeDeveloper(task,projectRow,context,dependencies);
+  case "tester":
+   return executeTester(task,projectRow,dependencies);
+  case "reviewer":
+   return executeReviewer(task,projectRow,context,dependencies);
+  case "delivery":
+   return executeDelivery(task,projectRow);
+  case "documentation":
+   return executeDeveloper(task,projectRow,context,dependencies);
+  case "diagnostic":
+  case "repair":
+   throw new Error(`${role} is a recovery role and cannot execute as a normal graph work item yet.`);
+  default:
+   throw new Error(`Unsupported team role: ${role}`);
+ }
+}
+
+function handoffExists(fromAssignmentId:string,toWorkItemId:string){
+ return listGoalHandoffs(
+  String(
+   db.prepare("SELECT goal_id FROM agent_assignments WHERE id=?")
+    .get(fromAssignmentId)?.goal_id??""
+  )
+ ).some(item=>
+  item.fromAssignmentId===fromAssignmentId&&
+  item.toWorkItemId===toWorkItemId&&
+  item.status!=="cancelled"
+ );
+}
+
+function createDependencyHandoffs(input:{
+ goalId:string;
+ workItemId:string;
+ assignmentId:string;
+ role:AgentRole;
+ roleResult:GoalRoleResult;
+}){
+ const graph=loadGoalTaskGraph(input.goalId);
+ const source=graph.items.find(item=>item.id===input.workItemId);
+ if(!source)return[];
+ const targets=graph.items.filter(item=>item.dependencies.includes(source.key));
+ const created=[];
+ for(const target of targets){
+  if(handoffExists(input.assignmentId,target.id))continue;
+  const handoff=createWorkHandoff({
+   goalId:input.goalId,
+   fromAssignmentId:input.assignmentId,
+   toWorkItemId:target.id,
+   summary:input.roleResult.summary||`${input.role} completed ${source.title}.`,
+   decisions:[
+    `${input.role} completed work item ${source.key}.`
+   ],
+   artifacts:[],
+   evidence:[
+    {
+     type:input.role==="tester"?"validation":"other",
+     summary:input.roleResult.summary||`${source.title} completed.`,
+     reference:input.roleResult.id
+    }
+   ],
+   risks:[],
+   recommendations:[
+    `Use role result ${input.roleResult.id} as upstream execution evidence.`
+   ],
+   metadata:{
+    role:input.role,
+    roleResultId:input.roleResult.id,
+    sourceWorkKey:source.key
+   }
+  });
+  created.push(deliverWorkHandoff(handoff.id));
+ }
+ return created;
+}
+
+export async function executeGoalTeamTask(task:any){
+ const managed=goalExecutionForTask(task.id);
+ if(!managed)return null;
+ const prepared=prepareGoalTaskExecution(task.id);
+ synchronizeTaskDevelopment(task.id);
+ if(!prepared)return null;
+ if(prepared.alreadyTerminal){
+  return{
+   managed:true,
+   skipped:true,
+   goalId:prepared.goalId,
+   workItemId:prepared.workItemId
+  };
+ }
+ if(!prepared.assignment){
+  throw new Error(`No team assignment exists for goal work ${prepared.workItemId}.`);
+ }
+ const projectRow=project(task.project_id);
+ const agentContext=await buildAgentProjectContext({
+  goalId:prepared.goalId,
+  workItemId:prepared.workItemId,
+  projectId:task.project_id,
+  workspace:projectRow.workspace,
+  role:prepared.assignment.role
+ });
+ const context=agentContext.shared;
+ const executionTask={
+  ...task,
+  prompt:[
+   task.prompt,
+   "",
+   "VEYLITH AUTONOMOUS PROJECT CONTEXT:",
+   agentContext.prompt
+  ].join("\n")
+ };
+ const roleResult=beginRoleResult({
+  goalId:prepared.goalId,
+  projectId:task.project_id,
+  workItemId:prepared.workItemId,
+  assignmentId:prepared.assignment.id,
+  taskId:task.id,
+  role:prepared.assignment.role
+ });
+ if(roleResult.status==="completed"){
+  completeGoalTaskExecution(task.id);
+  synchronizeTaskDevelopment(task.id);
+  return{
+   managed:true,
+   resumed:true,
+   roleResult
+  };
+ }
+ try{
+  consumeIncomingHandoffs(prepared.workItemId,prepared.assignment.id);
+  const dependencies=dependencyResults(prepared.goalId,prepared.workItemId);
+  event("team.role_started",`${prepared.assignment.role} started ${context.work.title}`,{
+   taskId:task.id,
+   projectId:task.project_id,
+   component:"team-execution",
+   data:{
+    goalId:prepared.goalId,
+    workItemId:prepared.workItemId,
+    assignmentId:prepared.assignment.id,
+    role:prepared.assignment.role
+   }
+  });
+  const result=await executeRole(
+   prepared.assignment.role,
+   executionTask,
+   projectRow,
+   context,
+   dependencies
+  );
+  const completed=completeRoleResult(
+   roleResult.id,
+   resultSummary(prepared.assignment.role,result),
+   result
+  );
+  memory(
+   task.project_id,
+   "team_role_result",
+   JSON.stringify({
+    goalId:prepared.goalId,
+    workItemId:prepared.workItemId,
+    assignmentId:prepared.assignment.id,
+    role:prepared.assignment.role,
+    roleResultId:completed.id,
+    summary:completed.summary
+   })
+  );
+  const handoffs=createDependencyHandoffs({
+   goalId:prepared.goalId,
+   workItemId:prepared.workItemId,
+   assignmentId:prepared.assignment.id,
+   role:prepared.assignment.role,
+   roleResult:completed
+  });
+  const advanced=completeGoalTaskExecution(task.id);
+  synchronizeTaskDevelopment(task.id);
+  event("team.role_completed",`${prepared.assignment.role} completed ${context.work.title}`,{
+   taskId:task.id,
+   projectId:task.project_id,
+   component:"team-execution",
+   data:{
+    goalId:prepared.goalId,
+    workItemId:prepared.workItemId,
+    assignmentId:prepared.assignment.id,
+    role:prepared.assignment.role,
+    roleResultId:completed.id,
+    handoffs:handoffs.length,
+    nextDispatches:advanced?.dispatched?.length??0
+   }
+  });
+  return{
+   managed:true,
+   roleResult:completed,
+   handoffs,
+   advanced
+  };
+ }catch(error){
+  failRoleResult(roleResult.id,error);
+  throw error;
+ }
+}
+
+
+
+
+
+============================================================
+FILE: src\team\team-assignment.service.ts
+============================================================
+import {getProjectGoal} from "../goals/goal.repository.js";
+import {loadGoalTaskGraph} from "../goals/goal-task-graph.service.js";
+import {
+ getActiveWorkAssignment,
+ createAgentAssignment,
+ listGoalAssignments,
+ setAgentAssignmentStatus
+} from "./team-assignment.repository.js";
+import {roleForWorkKind} from "./team-role.service.js";
+
+export function assignGoalWork(workItemId:string,goalId:string){
+ const existing=getActiveWorkAssignment(workItemId);
+ if(existing)return existing;
+ const goal=getProjectGoal(goalId);
+ if(!goal)throw new Error(`Goal not found: ${goalId}`);
+ const graph=loadGoalTaskGraph(goalId);
+ const work=graph.items.find(item=>item.id===workItemId);
+ if(!work)throw new Error(`Goal work item not found: ${workItemId}`);
+ if(work.status!=="ready"&&work.status!=="running"){
+  throw new Error(`Work item ${work.key} is not assignable while ${work.status}.`);
+ }
+ return createAgentAssignment({
+  goalId,
+  projectId:goal.projectId,
+  workItemId:work.id,
+  role:roleForWorkKind(work.kind)
+ });
+}
+
+export function assignRunnableGoalTeam(goalId:string){
+ const graph=loadGoalTaskGraph(goalId);
+ const assignments=[];
+ for(const work of graph.items){
+  if(work.status!=="ready"&&work.status!=="running")continue;
+  const existing=getActiveWorkAssignment(work.id);
+  assignments.push(existing||assignGoalWork(work.id,goalId));
+ }
+ return assignments;
+}
+
+export function synchronizeGoalTeam(goalId:string){
+ const graph=loadGoalTaskGraph(goalId);
+ const assignments=listGoalAssignments(goalId);
+ for(const assignment of assignments){
+  if(
+   assignment.status==="completed"||
+   assignment.status==="failed"||
+   assignment.status==="cancelled"
+  )continue;
+  const work=graph.items.find(item=>item.id===assignment.workItemId);
+  if(!work)continue;
+  if(work.status==="completed"){
+   setAgentAssignmentStatus(assignment.id,"completed",assignment.ownerToken);
+  }else if(work.status==="failed"){
+   setAgentAssignmentStatus(assignment.id,"failed",assignment.ownerToken);
+  }else if(work.status==="cancelled"||work.status==="blocked"){
+   setAgentAssignmentStatus(assignment.id,"cancelled",assignment.ownerToken);
+  }
+ }
+ return listGoalAssignments(goalId);
+}
+
+============================================================
+FILE: src\development\development-session.service.ts
+============================================================
+import {db,memory} from "../database/database.js";
+import {event} from "../core/telemetry.js";
+import {loadGoalTaskGraph} from "../goals/goal-task-graph.service.js";
+import {
+ createDevelopmentSession,
+ createDevelopmentMilestone,
+ getDevelopmentSession,
+ getActiveDevelopmentSession,
+ getGoalDevelopmentSession,
+ listDevelopmentMilestones,
+ updateDevelopmentMilestone,
+ updateDevelopmentSessionProgress,
+ incrementDevelopmentSessionRecovery,
+ setDevelopmentSessionState
+} from "./development-session.repository.js";
+import type {
+ DevelopmentMilestone,
+ DevelopmentMilestoneStatus,
+ DevelopmentSessionSnapshot
+} from "./development-session.types.js";
+
+function milestoneKind(kind:string){
+ if(kind==="architecture"||kind==="analysis")return "foundation";
+ if(kind==="implementation"||kind==="integration"||kind==="other")return "development";
+ if(kind==="test")return "validation";
+ if(kind==="documentation")return "documentation";
+ if(kind==="delivery")return "delivery";
+ return "development";
+}
+
+const milestoneMeta:Record<string,{title:string;description:string;sequence:number}>={
+ foundation:{
+  title:"Foundation & Architecture",
+  description:"Architecture, analysis and technical foundation.",
+  sequence:10
+ },
+ development:{
+  title:"Implementation",
+  description:"Primary implementation and integration work.",
+  sequence:20
+ },
+ validation:{
+  title:"Validation",
+  description:"Automated validation and quality verification.",
+  sequence:30
+ },
+ documentation:{
+  title:"Documentation",
+  description:"Project documentation and supporting material.",
+  sequence:40
+ },
+ delivery:{
+  title:"Delivery",
+  description:"Versioning, repository publication and delivery.",
+  sequence:50
+ }
+};
+
+function graphWork(goalId:string){
+ return loadGoalTaskGraph(goalId).items;
+}
+
+function deriveMilestoneStatus(
+ milestone:DevelopmentMilestone,
+ statuses:string[]
+):{status:DevelopmentMilestoneStatus;progress:number}{
+ if(!statuses.length)return{status:"completed",progress:100};
+ const completed=statuses.filter(status=>status==="completed").length;
+ const failed=statuses.some(status=>status==="failed");
+ const cancelled=statuses.some(status=>status==="cancelled");
+ const blocked=statuses.some(status=>status==="blocked");
+ const running=statuses.some(status=>status==="running");
+ const ready=statuses.some(status=>status==="ready");
+ const progress=Math.round((completed/statuses.length)*100);
+ if(completed===statuses.length)return{status:"completed",progress:100};
+ if(failed)return{status:"failed",progress};
+ if(cancelled)return{status:"cancelled",progress};
+ if(blocked&&!running&&!ready)return{status:"blocked",progress};
+ if(running||ready||completed>0)return{status:"active",progress};
+ return{status:milestone.status==="active"?"active":"pending",progress};
+}
+
+export function initializeDevelopmentSession(goalId:string){
+ const goal=db.prepare("SELECT id,project_id,status FROM project_goals WHERE id=?").get(goalId) as any;
+ if(!goal)throw new Error(`Goal not found: ${goalId}`);
+ const graph=graphWork(goalId);
+ if(!graph.length)throw new Error(`Goal ${goalId} has no development task graph.`);
+ const session=createDevelopmentSession(String(goal.project_id),goalId);
+ const groups=new Map<string,string[]>();
+ for(const item of graph){
+  const key=milestoneKind(String(item.kind));
+  const ids=groups.get(key)||[];
+  ids.push(item.id);
+  groups.set(key,ids);
+ }
+ for(const [key,workItemIds] of groups){
+  const meta=milestoneMeta[key];
+  createDevelopmentMilestone({
+   sessionId:session.id,
+   projectId:session.projectId,
+   goalId,
+   key,
+   title:meta.title,
+   description:meta.description,
+   sequence:meta.sequence,
+   workItemIds
+  });
+ }
+ synchronizeDevelopmentSession(session.id);
+ const result=getDevelopmentSession(session.id)!;
+ event("development.session.started",`Development session ${result.id} started`,{
+  projectId:result.projectId,
+  data:{goalId:result.goalId,sessionId:result.id}
+ });
+ memory(result.projectId,"development_session",{
+  action:"started",
+  sessionId:result.id,
+  goalId:result.goalId
+ });
+ return developmentSessionSnapshot(result.id);
+}
+
+export function synchronizeDevelopmentSession(sessionId:string):DevelopmentSessionSnapshot{
+ const session=getDevelopmentSession(sessionId);
+ if(!session)throw new Error(`Development session not found: ${sessionId}`);
+ const work=graphWork(session.goalId);
+ const byId=new Map(work.map(item=>[item.id,item]));
+ let milestones=listDevelopmentMilestones(session.id);
+ for(const milestone of milestones){
+  const statuses=milestone.workItemIds
+   .map(id=>byId.get(id)?.status)
+   .filter((status):status is NonNullable<typeof status>=>status!==undefined);
+  const derived=deriveMilestoneStatus(milestone,statuses);
+  updateDevelopmentMilestone(milestone.id,derived.status,derived.progress);
+ }
+ milestones=listDevelopmentMilestones(session.id);
+ const current=milestones.find(item=>item.status==="active")||
+  milestones.find(item=>item.status==="pending")||
+  milestones.find(item=>item.status==="blocked")||
+  milestones.find(item=>item.status==="failed")||
+  null;
+ const total=milestones.length;
+ const progress=total
+  ?Math.round(milestones.reduce((sum,item)=>sum+item.progress,0)/total)
+  :100;
+ updateDevelopmentSessionProgress(session.id,progress,current?.id??null);
+ const refreshed=getDevelopmentSession(session.id)!;
+ const allCompleted=milestones.length>0&&milestones.every(item=>item.status==="completed");
+ const anyFailed=milestones.some(item=>item.status==="failed");
+ const anyCancelled=milestones.some(item=>item.status==="cancelled");
+ const allTerminal=milestones.length>0&&milestones.every(item=>
+  ["completed","failed","cancelled","blocked"].includes(item.status)
+ );
+ if(allCompleted&&refreshed.status!=="completed"){
+  setDevelopmentSessionState(session.id,"completed");
+  db.prepare(`
+   UPDATE project_goals
+   SET status='completed',
+       completed_at=COALESCE(completed_at,?),
+       updated_at=?
+   WHERE id=? AND status NOT IN ('completed','cancelled')
+  `).run(new Date().toISOString(),new Date().toISOString(),session.goalId);
+  event("development.session.completed",`Development session ${session.id} completed`,{
+   projectId:session.projectId,
+   data:{goalId:session.goalId,sessionId:session.id}
+  });
+ }else if(allTerminal&&anyFailed&&refreshed.status==="active"){
+  setDevelopmentSessionState(session.id,"failed",{failure:"Development graph reached a terminal state with failed milestones."});
+ }else if(allTerminal&&anyCancelled&&refreshed.status==="active"){
+  setDevelopmentSessionState(session.id,"cancelled",{reason:"Development graph reached a terminal state with cancelled milestones."});
+ }
+ return developmentSessionSnapshot(session.id);
+}
+
+export function recoverDevelopmentSession(projectId:string){
+ const session=getActiveDevelopmentSession(projectId);
+ if(!session)return null;
+ incrementDevelopmentSessionRecovery(session.id);
+ if(session.status==="paused"){
+  setDevelopmentSessionState(session.id,"active");
+ }
+ const snapshot=synchronizeDevelopmentSession(session.id);
+ event("development.session.recovered",`Recovered development session ${session.id}`,{
+  projectId,
+  data:{
+   goalId:session.goalId,
+   sessionId:session.id,
+   recoveryCount:snapshot.session.recoveryCount,
+   currentMilestoneId:snapshot.session.currentMilestoneId
+  }
+ });
+ memory(projectId,"development_session",{
+  action:"recovered",
+  sessionId:session.id,
+  goalId:session.goalId,
+  recoveryCount:snapshot.session.recoveryCount
+ });
+ return snapshot;
+}
+
+export function pauseDevelopmentSession(sessionId:string,reason="Paused"){
+ const session=setDevelopmentSessionState(sessionId,"paused",{reason});
+ event("development.session.paused",reason,{
+  projectId:session.projectId,
+  data:{goalId:session.goalId,sessionId}
+ });
+ return developmentSessionSnapshot(sessionId);
+}
+
+export function resumeDevelopmentSession(sessionId:string){
+ const session=setDevelopmentSessionState(sessionId,"active");
+ incrementDevelopmentSessionRecovery(sessionId);
+ const snapshot=synchronizeDevelopmentSession(sessionId);
+ event("development.session.resumed",`Development session ${sessionId} resumed`,{
+  projectId:session.projectId,
+  data:{goalId:session.goalId,sessionId}
+ });
+ return snapshot;
+}
+
+export function developmentSessionSnapshot(sessionId:string):DevelopmentSessionSnapshot{
+ const session=getDevelopmentSession(sessionId);
+ if(!session)throw new Error(`Development session not found: ${sessionId}`);
+ const milestones=listDevelopmentMilestones(sessionId);
+ const current=session.currentMilestoneId
+  ?milestones.find(item=>item.id===session.currentMilestoneId)||null
+  :null;
+ return{session,milestones,currentMilestone:current};
+}
+
+export function goalDevelopmentSessionSnapshot(goalId:string){
+ const session=getGoalDevelopmentSession(goalId);
+ return session?developmentSessionSnapshot(session.id):null;
+}
+
+
+
+============================================================
+FILE: src\development\development-session.repository.ts
+============================================================
+import crypto from "node:crypto";
+import {db} from "../database/database.js";
+import {now} from "../config/config.js";
+import type {
+ DevelopmentSession,
+ DevelopmentSessionStatus,
+ DevelopmentMilestone,
+ DevelopmentMilestoneStatus
+} from "./development-session.types.js";
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS development_sessions(
+ id TEXT PRIMARY KEY,
+ project_id TEXT NOT NULL,
+ goal_id TEXT NOT NULL,
+ status TEXT NOT NULL,
+ current_milestone_id TEXT,
+ progress INTEGER NOT NULL DEFAULT 0,
+ recovery_count INTEGER NOT NULL DEFAULT 0,
+ last_checkpoint_at TEXT,
+ pause_reason TEXT,
+ failure TEXT,
+ started_at TEXT NOT NULL,
+ paused_at TEXT,
+ resumed_at TEXT,
+ completed_at TEXT,
+ created_at TEXT NOT NULL,
+ updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_development_sessions_project
+ ON development_sessions(project_id);
+CREATE INDEX IF NOT EXISTS idx_development_sessions_goal
+ ON development_sessions(goal_id);
+CREATE INDEX IF NOT EXISTS idx_development_sessions_status
+ ON development_sessions(status);
+
+CREATE TABLE IF NOT EXISTS development_milestones(
+ id TEXT PRIMARY KEY,
+ session_id TEXT NOT NULL,
+ project_id TEXT NOT NULL,
+ goal_id TEXT NOT NULL,
+ milestone_key TEXT NOT NULL,
+ title TEXT NOT NULL,
+ description TEXT NOT NULL,
+ sequence INTEGER NOT NULL,
+ status TEXT NOT NULL,
+ work_item_ids_json TEXT NOT NULL,
+ progress INTEGER NOT NULL DEFAULT 0,
+ started_at TEXT,
+ completed_at TEXT,
+ created_at TEXT NOT NULL,
+ updated_at TEXT NOT NULL,
+ UNIQUE(session_id,milestone_key)
+);
+CREATE INDEX IF NOT EXISTS idx_development_milestones_session
+ ON development_milestones(session_id,sequence);
+CREATE INDEX IF NOT EXISTS idx_development_milestones_goal
+ ON development_milestones(goal_id);
+CREATE INDEX IF NOT EXISTS idx_development_milestones_status
+ ON development_milestones(status);
+`);
+
+function parseIds(value:any):string[]{
+ try{
+  const parsed=JSON.parse(String(value||"[]"));
+  return Array.isArray(parsed)?parsed.map(String):[];
+ }catch{
+  return[];
+ }
+}
+
+function mapSession(row:any):DevelopmentSession{
+ return{
+  id:String(row.id),
+  projectId:String(row.project_id),
+  goalId:String(row.goal_id),
+  status:row.status,
+  currentMilestoneId:row.current_milestone_id?String(row.current_milestone_id):null,
+  progress:Number(row.progress||0),
+  recoveryCount:Number(row.recovery_count||0),
+  lastCheckpointAt:row.last_checkpoint_at?String(row.last_checkpoint_at):null,
+  pauseReason:row.pause_reason?String(row.pause_reason):null,
+  failure:row.failure?String(row.failure):null,
+  startedAt:String(row.started_at),
+  pausedAt:row.paused_at?String(row.paused_at):null,
+  resumedAt:row.resumed_at?String(row.resumed_at):null,
+  completedAt:row.completed_at?String(row.completed_at):null,
+  createdAt:String(row.created_at),
+  updatedAt:String(row.updated_at)
+ };
+}
+
+function mapMilestone(row:any):DevelopmentMilestone{
+ return{
+  id:String(row.id),
+  sessionId:String(row.session_id),
+  projectId:String(row.project_id),
+  goalId:String(row.goal_id),
+  key:String(row.milestone_key),
+  title:String(row.title),
+  description:String(row.description),
+  sequence:Number(row.sequence),
+  status:row.status,
+  workItemIds:parseIds(row.work_item_ids_json),
+  progress:Number(row.progress||0),
+  startedAt:row.started_at?String(row.started_at):null,
+  completedAt:row.completed_at?String(row.completed_at):null,
+  createdAt:String(row.created_at),
+  updatedAt:String(row.updated_at)
+ };
+}
+
+export function getDevelopmentSession(id:string){
+ const row=db.prepare("SELECT * FROM development_sessions WHERE id=?").get(id);
+ return row?mapSession(row):null;
+}
+
+export function getActiveDevelopmentSession(projectId:string){
+ const row=db.prepare(`
+  SELECT * FROM development_sessions
+  WHERE project_id=? AND status IN ('active','paused')
+  ORDER BY created_at DESC,id DESC
+  LIMIT 1
+ `).get(projectId);
+ return row?mapSession(row):null;
+}
+
+export function getGoalDevelopmentSession(goalId:string){
+ const row=db.prepare(`
+  SELECT * FROM development_sessions
+  WHERE goal_id=?
+  ORDER BY created_at DESC,id DESC
+  LIMIT 1
+ `).get(goalId);
+ return row?mapSession(row):null;
+}
+
+export function listProjectDevelopmentSessions(projectId:string){
+ return(db.prepare(`
+  SELECT * FROM development_sessions
+  WHERE project_id=?
+  ORDER BY created_at,id
+ `).all(projectId) as any[]).map(mapSession);
+}
+
+export function createDevelopmentSession(projectId:string,goalId:string){
+ const existing=getActiveDevelopmentSession(projectId);
+ if(existing){
+  if(existing.goalId!==goalId)throw new Error(`Project already has active development session ${existing.id}.`);
+  return existing;
+ }
+ const time=now();
+ const id=`ses_${crypto.randomBytes(8).toString("hex")}`;
+ db.prepare(`
+  INSERT INTO development_sessions(
+   id,project_id,goal_id,status,current_milestone_id,progress,
+   recovery_count,last_checkpoint_at,pause_reason,failure,
+   started_at,paused_at,resumed_at,completed_at,created_at,updated_at
+  ) VALUES(?,?,?,'active',NULL,0,0,NULL,NULL,NULL,?,NULL,NULL,NULL,?,?)
+ `).run(id,projectId,goalId,time,time,time);
+ return getDevelopmentSession(id)!;
+}
+
+export function setDevelopmentSessionState(
+ id:string,
+ status:DevelopmentSessionStatus,
+ options:{reason?:string|null;failure?:string|null}={}
+){
+ const current=getDevelopmentSession(id);
+ if(!current)throw new Error(`Development session not found: ${id}`);
+ if(["completed","failed","cancelled"].includes(current.status)){
+  if(current.status===status)return current;
+  throw new Error(`Terminal development session ${id} cannot transition from ${current.status}.`);
+ }
+ const time=now();
+ const paused=status==="paused";
+ const terminal=["completed","failed","cancelled"].includes(status);
+ db.prepare(`
+  UPDATE development_sessions
+  SET status=?,
+      pause_reason=?,
+      failure=?,
+      paused_at=?,
+      resumed_at=CASE WHEN ?='active' THEN ? ELSE resumed_at END,
+      completed_at=CASE WHEN ?=1 THEN ? ELSE NULL END,
+      updated_at=?
+  WHERE id=?
+ `).run(
+  status,
+  paused?(options.reason??null):null,
+  status==="failed"?(options.failure??options.reason??"Development session failed"):null,
+  paused?time:null,
+  status,
+  time,
+  terminal?1:0,
+  time,
+  time,
+  id
+ );
+ return getDevelopmentSession(id)!;
+}
+
+export function updateDevelopmentSessionProgress(
+ id:string,
+ progress:number,
+ currentMilestoneId:string|null
+){
+ const value=Math.max(0,Math.min(100,Math.round(progress)));
+ db.prepare(`
+  UPDATE development_sessions
+  SET progress=?,current_milestone_id=?,last_checkpoint_at=?,updated_at=?
+  WHERE id=?
+ `).run(value,currentMilestoneId,now(),now(),id);
+ return getDevelopmentSession(id);
+}
+
+export function incrementDevelopmentSessionRecovery(id:string){
+ const time=now();
+ db.prepare(`
+  UPDATE development_sessions
+  SET recovery_count=recovery_count+1,
+      resumed_at=?,
+      last_checkpoint_at=?,
+      updated_at=?
+  WHERE id=?
+ `).run(time,time,time,id);
+ return getDevelopmentSession(id);
+}
+
+export function getDevelopmentMilestone(id:string){
+ const row=db.prepare("SELECT * FROM development_milestones WHERE id=?").get(id);
+ return row?mapMilestone(row):null;
+}
+
+export function listDevelopmentMilestones(sessionId:string){
+ return(db.prepare(`
+  SELECT * FROM development_milestones
+  WHERE session_id=?
+  ORDER BY sequence,id
+ `).all(sessionId) as any[]).map(mapMilestone);
+}
+
+export function createDevelopmentMilestone(input:{
+ sessionId:string;
+ projectId:string;
+ goalId:string;
+ key:string;
+ title:string;
+ description:string;
+ sequence:number;
+ workItemIds:string[];
+}){
+ const existing=db.prepare(`
+  SELECT * FROM development_milestones
+  WHERE session_id=? AND milestone_key=?
+  LIMIT 1
+ `).get(input.sessionId,input.key);
+ if(existing)return mapMilestone(existing);
+ const time=now();
+ const id=`mil_${crypto.randomBytes(8).toString("hex")}`;
+ db.prepare(`
+  INSERT INTO development_milestones(
+   id,session_id,project_id,goal_id,milestone_key,title,description,
+   sequence,status,work_item_ids_json,progress,started_at,completed_at,
+   created_at,updated_at
+  ) VALUES(?,?,?,?,?,?,?,?,'pending',?,0,NULL,NULL,?,?)
+ `).run(
+  id,input.sessionId,input.projectId,input.goalId,input.key,
+  input.title,input.description,input.sequence,
+  JSON.stringify([...new Set(input.workItemIds)]),time,time
+ );
+ return getDevelopmentMilestone(id)!;
+}
+
+export function updateDevelopmentMilestone(
+ id:string,
+ status:DevelopmentMilestoneStatus,
+ progress:number
+){
+ const current=getDevelopmentMilestone(id);
+ if(!current)throw new Error(`Development milestone not found: ${id}`);
+ const value=Math.max(0,Math.min(100,Math.round(progress)));
+ const time=now();
+ const terminal=["completed","failed","cancelled"].includes(status);
+ db.prepare(`
+  UPDATE development_milestones
+  SET status=?,
+      progress=?,
+      started_at=CASE
+       WHEN ?='active' THEN COALESCE(started_at,?)
+       ELSE started_at
+      END,
+      completed_at=CASE WHEN ?=1 THEN COALESCE(completed_at,?) ELSE NULL END,
+      updated_at=?
+  WHERE id=?
+ `).run(status,value,status,time,terminal?1:0,time,time,id);
+ return getDevelopmentMilestone(id)!;
+}
+
+export function deleteDevelopmentSession(id:string){
+ db.exec("BEGIN IMMEDIATE");
+ try{
+  db.prepare("DELETE FROM development_milestones WHERE session_id=?").run(id);
+  const changes=Number(db.prepare("DELETE FROM development_sessions WHERE id=?").run(id).changes);
+  db.exec("COMMIT");
+  return changes>0;
+ }catch(error){
+  try{db.exec("ROLLBACK")}catch{}
+  throw error;
+ }
+}
+
+============================================================
+FILE: src\development\development-cycle.service.ts
+============================================================
+import{db}from"../database/database.js";
+import{getDevelopmentSession}from"./development-session.repository.js";
+import{
+ createDevelopmentCycle,
+ getActiveDevelopmentCycle,
+ getLatestDevelopmentCycle,
+ listDevelopmentCycles,
+ setDevelopmentCycleState,
+ setDevelopmentCycleWork
+}from"./development-cycle.repository.js";
+
+function sessionWork(goalId:string){
+ return db.prepare(`
+  SELECT id,status
+  FROM goal_work_items
+  WHERE goal_id=?
+  ORDER BY created_at ASC,id ASC
+ `).all(goalId) as any[];
+}
+function unfinishedWork(goalId:string){
+ return sessionWork(goalId)
+  .filter(item=>!["completed","cancelled"].includes(String(item.status)))
+  .map(item=>String(item.id));
+}
+export function ensureDevelopmentCycle(sessionId:string){
+ const session=getDevelopmentSession(sessionId);
+ if(!session)throw new Error(`Development session not found: ${sessionId}`);
+ const active=getActiveDevelopmentCycle(sessionId);
+ if(active)return active;
+ const latest=getLatestDevelopmentCycle(sessionId);
+ if(latest?.status==="completed"&&session.status==="completed")return latest;
+ return createDevelopmentCycle({
+  sessionId,
+  projectId:session.projectId,
+  goalId:session.goalId,
+  workItemIds:unfinishedWork(session.goalId),
+  reason:latest?"Continuation cycle":"Initial development cycle"
+ });
+}
+export function synchronizeDevelopmentCycle(sessionId:string){
+ const session=getDevelopmentSession(sessionId);
+ if(!session)throw new Error(`Development session not found: ${sessionId}`);
+ const cycle=ensureDevelopmentCycle(sessionId);
+ const remaining=unfinishedWork(session.goalId);
+ setDevelopmentCycleWork(cycle.id,remaining);
+ if(session.status==="completed"){
+  return setDevelopmentCycleState(cycle.id,"completed",{
+   summary:"Development goal completed."
+  });
+ }
+ if(session.status==="cancelled"){
+  return setDevelopmentCycleState(cycle.id,"cancelled",{
+   reason:"Development session cancelled."
+  });
+ }
+ if(session.status==="failed"){
+  return setDevelopmentCycleState(cycle.id,"failed",{
+   reason:"Development session reached a terminal failed state."
+  });
+ }
+ return getActiveDevelopmentCycle(sessionId)!;
+}
+export function beginDevelopmentContinuation(sessionId:string,reason:string){
+ const session=getDevelopmentSession(sessionId);
+ if(!session)throw new Error(`Development session not found: ${sessionId}`);
+ const active=getActiveDevelopmentCycle(sessionId);
+ if(active){
+  setDevelopmentCycleState(active.id,"continued",{reason});
+ }
+ return createDevelopmentCycle({
+  sessionId,
+  projectId:session.projectId,
+  goalId:session.goalId,
+  workItemIds:unfinishedWork(session.goalId),
+  reason
+ });
+}
+export function developmentCycleSnapshot(sessionId:string){
+ return{
+  active:getActiveDevelopmentCycle(sessionId),
+  latest:getLatestDevelopmentCycle(sessionId),
+  cycles:listDevelopmentCycles(sessionId)
+ };
+}
+
+============================================================
+FILE: src\development\continuation-evaluator.service.ts
+============================================================
+import{db}from"../database/database.js";
+import{getDevelopmentSession}from"./development-session.repository.js";
+import{getActiveDevelopmentCycle,getLatestDevelopmentCycle,setDevelopmentCycleState}from"./development-cycle.repository.js";
+import{ensureDevelopmentCycle}from"./development-cycle.service.js";
+import type{ContinuationEvaluation,ContinuationEvidence}from"./continuation.types.js";
+
+function json(value:any){
+ try{return JSON.parse(value||"[]");}catch{return[];}
+}
+function ids(values:any[]){
+ return[...new Set(values.filter(value=>typeof value==="string"&&value.length>0))];
+}
+export function evaluateDevelopmentContinuation(sessionId:string):ContinuationEvaluation{
+ const session=getDevelopmentSession(sessionId);
+ if(!session)throw new Error(`Development session not found: ${sessionId}`);
+ const goal=db.prepare(`
+  SELECT id,project_id,status,requirements_json,acceptance_criteria_json
+  FROM project_goals WHERE id=?
+ `).get(session.goalId) as any;
+ if(!goal)throw new Error(`Project goal not found: ${session.goalId}`);
+
+ const work=db.prepare(`
+  SELECT id,status,requirement_ids_json,acceptance_ids_json
+  FROM goal_work_items
+  WHERE goal_id=?
+  ORDER BY created_at ASC,id ASC
+ `).all(session.goalId) as any[];
+
+ const cycle=getActiveDevelopmentCycle(sessionId)||
+  getLatestDevelopmentCycle(sessionId)||
+  ensureDevelopmentCycle(sessionId);
+
+ const statuses=work.map(item=>String(item.status));
+ const count=(status:string)=>statuses.filter(value=>value===status).length;
+
+ const requirements=json(goal.requirements_json);
+ const acceptance=json(goal.acceptance_criteria_json);
+
+ const requirementIds=ids(requirements.map((item:any)=>
+  typeof item==="string"?item:item?.id
+ ));
+ const acceptanceIds=ids(acceptance.map((item:any)=>
+  typeof item==="string"?item:item?.id
+ ));
+
+ const completed=work.filter(item=>String(item.status)==="completed");
+ const coveredRequirements=new Set(
+  completed.flatMap(item=>json(item.requirement_ids_json))
+ );
+ const coveredAcceptance=new Set(
+  completed.flatMap(item=>json(item.acceptance_ids_json))
+ );
+
+ const uncoveredRequirementIds=requirementIds.filter(id=>!coveredRequirements.has(id));
+ const uncoveredAcceptanceIds=acceptanceIds.filter(id=>!coveredAcceptance.has(id));
+
+ const failed=work.filter(item=>String(item.status)==="failed").map(item=>String(item.id));
+ const blocked=work.filter(item=>String(item.status)==="blocked").map(item=>String(item.id));
+ const runnable=work.filter(item=>["ready","running"].includes(String(item.status))).map(item=>String(item.id));
+
+ const graphTerminal=work.length>0&&work.every(item=>
+  ["completed","failed","cancelled","blocked"].includes(String(item.status))
+ );
+
+ const goalSatisfied=
+  work.length>0&&
+  work.every(item=>String(item.status)==="completed")&&
+  uncoveredRequirementIds.length===0&&
+  uncoveredAcceptanceIds.length===0;
+
+ const needsAdditionalWork=
+  uncoveredRequirementIds.length>0||
+  uncoveredAcceptanceIds.length>0;
+
+ let decision:ContinuationEvaluation["decision"];
+ let reason:string;
+
+ if(goalSatisfied){
+  decision="complete";
+  reason="All development work, requirements, and acceptance criteria are satisfied.";
+ }else if(failed.length>0){
+  decision="repair";
+  reason="Failed development work requires diagnosis or repair before the goal can complete.";
+ }else if(runnable.length>0){
+  decision="continue";
+  reason="Runnable development work remains in the current goal graph.";
+ }else if(needsAdditionalWork){
+  decision="continue";
+  reason="Goal coverage is incomplete and additional development work is required.";
+ }else if(blocked.length>0){
+  decision="blocked";
+  reason="Remaining development work is blocked with no runnable work available.";
+ }else if(!graphTerminal){
+  decision="continue";
+  reason="Development graph contains unfinished work.";
+ }else{
+  decision="blocked";
+  reason="Development cannot progress from the current graph state.";
+ }
+
+ const evidence:ContinuationEvidence={
+  totalWork:work.length,
+  completedWork:count("completed"),
+  failedWork:count("failed"),
+  cancelledWork:count("cancelled"),
+  blockedWork:count("blocked"),
+  runningWork:count("running"),
+  readyWork:count("ready"),
+  pendingWork:count("pending"),
+  uncoveredRequirementIds,
+  uncoveredAcceptanceIds,
+  failedWorkItemIds:failed,
+  blockedWorkItemIds:blocked,
+  runnableWorkItemIds:runnable
+ };
+
+ return{
+  sessionId:session.id,
+  projectId:session.projectId,
+  goalId:session.goalId,
+  cycleId:cycle?.id??null,
+  decision,
+  reason,
+  goalSatisfied,
+  graphTerminal,
+  needsAdditionalWork,
+  evidence,
+  evaluatedAt:new Date().toISOString()
+ };
+}
+export function evaluateAndMarkDevelopmentCycle(sessionId:string){
+ const evaluation=evaluateDevelopmentContinuation(sessionId);
+ if(evaluation.cycleId){
+  setDevelopmentCycleState(
+   evaluation.cycleId,
+   "evaluating",
+   {
+    reason:evaluation.reason,
+    summary:JSON.stringify({
+     decision:evaluation.decision,
+     goalSatisfied:evaluation.goalSatisfied,
+     graphTerminal:evaluation.graphTerminal,
+     needsAdditionalWork:evaluation.needsAdditionalWork,
+     evidence:evaluation.evidence,
+     evaluatedAt:evaluation.evaluatedAt
+    })
+   }
+  );
+ }
+ return evaluation;
+}
+
+============================================================
+FILE: src\goals\goal.repository.ts
+============================================================
+import crypto from "node:crypto";
+import {db} from "../database/database.js";
+import type {CreateProjectGoalInput,GoalAcceptanceCriterion,GoalConstraint,GoalRequirement,GoalStatus,ProjectGoal} from "./goal.types.js";
+
+const now=()=>new Date().toISOString();
+const id=(prefix:string)=>`${prefix}_${crypto.randomBytes(8).toString("hex")}`;
+const parse=<T>(value:string|null|undefined,fallback:T):T=>{
+ if(!value)return fallback;
+ try{return JSON.parse(value) as T;}catch{return fallback;}
+};
+
+export function ensureGoalSchema(){
+ db.exec(`
+ CREATE TABLE IF NOT EXISTS project_goals(
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  objective TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft',
+  priority TEXT NOT NULL DEFAULT 'normal',
+  requirements_json TEXT NOT NULL DEFAULT '[]',
+  acceptance_criteria_json TEXT NOT NULL DEFAULT '[]',
+  constraints_json TEXT NOT NULL DEFAULT '[]',
+  source_task_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  activated_at TEXT,
+  completed_at TEXT
+ );
+ CREATE INDEX IF NOT EXISTS idx_project_goals_project ON project_goals(project_id);
+ CREATE INDEX IF NOT EXISTS idx_project_goals_status ON project_goals(status);
+ `);
+}
+
+ensureGoalSchema();
+
+function rowToGoal(row:any):ProjectGoal{
+ return{
+  id:String(row.id),
+  projectId:String(row.project_id),
+  title:String(row.title),
+  objective:String(row.objective),
+  status:row.status,
+  priority:row.priority,
+  requirements:parse<GoalRequirement[]>(row.requirements_json,[]),
+  acceptanceCriteria:parse<GoalAcceptanceCriterion[]>(row.acceptance_criteria_json,[]),
+  constraints:parse<GoalConstraint[]>(row.constraints_json,[]),
+  sourceTaskId:row.source_task_id??undefined,
+  createdAt:String(row.created_at),
+  updatedAt:String(row.updated_at),
+  activatedAt:row.activated_at??undefined,
+  completedAt:row.completed_at??undefined
+ };
+}
+
+export function createProjectGoal(input:CreateProjectGoalInput):ProjectGoal{
+ const created=now();
+ const goal:ProjectGoal={
+  id:id("gol"),
+  projectId:input.projectId,
+  title:input.title.trim(),
+  objective:input.objective.trim(),
+  status:"draft",
+  priority:input.priority??"normal",
+  requirements:(input.requirements??[]).map(item=>({
+   id:id("req"),
+   text:item.text.trim(),
+   required:item.required!==false,
+   status:"pending"
+  })),
+  acceptanceCriteria:(input.acceptanceCriteria??[]).map(text=>({
+   id:id("acc"),
+   text:text.trim(),
+   status:"pending"
+  })),
+  constraints:(input.constraints??[]).map(item=>({
+   id:id("con"),
+   type:item.type,
+   text:item.text.trim()
+  })),
+  sourceTaskId:input.sourceTaskId,
+  createdAt:created,
+  updatedAt:created
+ };
+ if(!goal.projectId.trim())throw new Error("Goal projectId is required");
+ if(!goal.title)throw new Error("Goal title is required");
+ if(!goal.objective)throw new Error("Goal objective is required");
+ db.prepare(`
+  INSERT INTO project_goals(
+   id,project_id,title,objective,status,priority,
+   requirements_json,acceptance_criteria_json,constraints_json,
+   source_task_id,created_at,updated_at
+  ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+ `).run(
+  goal.id,goal.projectId,goal.title,goal.objective,goal.status,goal.priority,
+  JSON.stringify(goal.requirements),JSON.stringify(goal.acceptanceCriteria),
+  JSON.stringify(goal.constraints),goal.sourceTaskId??null,goal.createdAt,goal.updatedAt
+ );
+ return goal;
+}
+
+export function getProjectGoal(goalId:string):ProjectGoal|null{
+ const row=db.prepare("SELECT * FROM project_goals WHERE id=?").get(goalId);
+ return row?rowToGoal(row):null;
+}
+
+export function listProjectGoals(projectId?:string):ProjectGoal[]{
+ const rows=projectId
+  ?db.prepare("SELECT * FROM project_goals WHERE project_id=? ORDER BY created_at DESC").all(projectId)
+  :db.prepare("SELECT * FROM project_goals ORDER BY created_at DESC").all();
+ return rows.map(rowToGoal);
+}
+
+export function updateGoalStatus(goalId:string,status:GoalStatus):ProjectGoal{
+ const current=getProjectGoal(goalId);
+ if(!current)throw new Error(`Goal not found: ${goalId}`);
+ const updated=now();
+ const activated=status==="active"?(current.activatedAt??updated):current.activatedAt;
+ const completed=status==="completed"?updated:status==="cancelled"?current.completedAt:undefined;
+ db.prepare(`
+  UPDATE project_goals
+  SET status=?,updated_at=?,activated_at=?,completed_at=?
+  WHERE id=?
+ `).run(status,updated,activated??null,completed??null,goalId);
+ return getProjectGoal(goalId)!;
+}
+
+export function replaceGoalDefinition(
+ goalId:string,
+ definition:Pick<ProjectGoal,"requirements"|"acceptanceCriteria"|"constraints">
+):ProjectGoal{
+ if(!getProjectGoal(goalId))throw new Error(`Goal not found: ${goalId}`);
+ db.prepare(`
+  UPDATE project_goals
+  SET requirements_json=?,acceptance_criteria_json=?,constraints_json=?,updated_at=?
+  WHERE id=?
+ `).run(
+  JSON.stringify(definition.requirements),
+  JSON.stringify(definition.acceptanceCriteria),
+  JSON.stringify(definition.constraints),
+  now(),
+  goalId
+ );
+ return getProjectGoal(goalId)!;
+}
+
+export function deleteProjectGoal(goalId:string):boolean{
+ return Number(db.prepare("DELETE FROM project_goals WHERE id=?").run(goalId).changes)>0;
+}
+
+============================================================
+FILE: src\goals\goal-task-graph.repository.ts
+============================================================
+import crypto from "node:crypto";
+import {db} from "../database/database.js";
+import type {GoalWorkItem,GoalWorkStatus} from "./goal-task-graph.types.js";
+
+const now=()=>new Date().toISOString();
+const id=()=>`wrk_${crypto.randomBytes(8).toString("hex")}`;
+const parse=(value:any):string[]=>{
+ try{
+  const result=JSON.parse(String(value||"[]"));
+  return Array.isArray(result)?result.map(String):[];
+ }catch{return[];}
+};
+
+export function ensureGoalTaskGraphSchema(){
+ db.exec(`
+ CREATE TABLE IF NOT EXISTS goal_work_items(
+  id TEXT PRIMARY KEY,
+  goal_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  work_key TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  priority INTEGER NOT NULL DEFAULT 50,
+  dependencies_json TEXT NOT NULL DEFAULT '[]',
+  requirement_ids_json TEXT NOT NULL DEFAULT '[]',
+  acceptance_ids_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  started_at TEXT,
+  completed_at TEXT,
+  UNIQUE(goal_id,work_key)
+ );
+ CREATE INDEX IF NOT EXISTS idx_goal_work_goal ON goal_work_items(goal_id);
+ CREATE INDEX IF NOT EXISTS idx_goal_work_project ON goal_work_items(project_id);
+ CREATE INDEX IF NOT EXISTS idx_goal_work_status ON goal_work_items(status);
+ `);
+}
+
+ensureGoalTaskGraphSchema();
+
+function rowToItem(row:any):GoalWorkItem{
+ return{
+  id:String(row.id),
+  goalId:String(row.goal_id),
+  projectId:String(row.project_id),
+  key:String(row.work_key),
+  title:String(row.title),
+  description:String(row.description),
+  kind:row.kind,
+  status:row.status,
+  priority:Number(row.priority),
+  dependencies:parse(row.dependencies_json),
+  requirementIds:parse(row.requirement_ids_json),
+  acceptanceCriterionIds:parse(row.acceptance_ids_json),
+  createdAt:String(row.created_at),
+  updatedAt:String(row.updated_at),
+  startedAt:row.started_at??undefined,
+  completedAt:row.completed_at??undefined
+ };
+}
+
+export function newGoalWorkItem(
+ goalId:string,
+ projectId:string,
+ input:Omit<GoalWorkItem,"id"|"goalId"|"projectId"|"status"|"createdAt"|"updatedAt">
+):GoalWorkItem{
+ const time=now();
+ return{
+  id:id(),
+  goalId,
+  projectId,
+  status:"pending",
+  createdAt:time,
+  updatedAt:time,
+  ...input
+ };
+}
+
+export function saveGoalTaskGraph(items:GoalWorkItem[]){
+ if(!items.length)return;
+ const goalId=items[0].goalId;
+ const insert=db.prepare(`
+  INSERT INTO goal_work_items(
+   id,goal_id,project_id,work_key,title,description,kind,status,priority,
+   dependencies_json,requirement_ids_json,acceptance_ids_json,
+   created_at,updated_at,started_at,completed_at
+  ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+ `);
+
+ db.exec("BEGIN IMMEDIATE");
+ try{
+  db.prepare("DELETE FROM goal_work_items WHERE goal_id=?").run(goalId);
+  for(const item of items){
+   insert.run(
+    item.id,
+    item.goalId,
+    item.projectId,
+    item.key,
+    item.title,
+    item.description,
+    item.kind,
+    item.status,
+    item.priority,
+    JSON.stringify(item.dependencies),
+    JSON.stringify(item.requirementIds),
+    JSON.stringify(item.acceptanceCriterionIds),
+    item.createdAt,
+    item.updatedAt,
+    item.startedAt??null,
+    item.completedAt??null
+   );
+  }
+  db.exec("COMMIT");
+ }catch(error){
+  try{db.exec("ROLLBACK");}catch{}
+  throw error;
+ }
+}
+
+export function listGoalWorkItems(goalId:string):GoalWorkItem[]{
+ return(db.prepare(
+  "SELECT * FROM goal_work_items WHERE goal_id=? ORDER BY priority DESC,created_at,id"
+ ).all(goalId) as any[]).map(rowToItem);
+}
+
+export function getGoalWorkItem(id:string):GoalWorkItem|null{
+ const row=db.prepare("SELECT * FROM goal_work_items WHERE id=?").get(id);
+ return row?rowToItem(row):null;
+}
+
+export function updateGoalWorkStatus(id:string,status:GoalWorkStatus):GoalWorkItem{
+ const current=getGoalWorkItem(id);
+ if(!current)throw new Error(`Goal work item not found: ${id}`);
+ const time=now();
+ const started=status==="running"?(current.startedAt??time):current.startedAt;
+ const completed=status==="completed"?time:current.completedAt;
+ db.prepare(`
+  UPDATE goal_work_items
+  SET status=?,updated_at=?,started_at=?,completed_at=?
+  WHERE id=?
+ `).run(status,time,started??null,completed??null,id);
+ return getGoalWorkItem(id)!;
+}
+
+export function deleteGoalTaskGraph(goalId:string){
+ return Number(
+  db.prepare("DELETE FROM goal_work_items WHERE goal_id=?").run(goalId).changes
+ );
+}
+
+============================================================
+FILE: src\goals\goal-work-dispatch.repository.ts
+============================================================
+import {db} from "../database/database.js";
+import type {GoalWorkDispatch,GoalWorkDispatchStatus} from "./goal-work-dispatch.types.js";
+
+const now=()=>new Date().toISOString();
+
+export function ensureGoalWorkDispatchSchema(){
+ db.exec(`
+ CREATE TABLE IF NOT EXISTS goal_work_dispatches(
+  work_item_id TEXT PRIMARY KEY,
+  goal_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  task_id TEXT NOT NULL UNIQUE,
+  job_id TEXT,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+ );
+ CREATE INDEX IF NOT EXISTS idx_goal_dispatch_goal ON goal_work_dispatches(goal_id);
+ CREATE INDEX IF NOT EXISTS idx_goal_dispatch_project ON goal_work_dispatches(project_id);
+ CREATE INDEX IF NOT EXISTS idx_goal_dispatch_status ON goal_work_dispatches(status);
+ `);
+}
+
+ensureGoalWorkDispatchSchema();
+
+function rowToDispatch(row:any):GoalWorkDispatch{
+ return{
+  workItemId:String(row.work_item_id),
+  goalId:String(row.goal_id),
+  projectId:String(row.project_id),
+  taskId:String(row.task_id),
+  jobId:row.job_id?String(row.job_id):null,
+  status:row.status,
+  createdAt:String(row.created_at),
+  updatedAt:String(row.updated_at)
+ };
+}
+
+export function getGoalWorkDispatch(workItemId:string):GoalWorkDispatch|null{
+ const row=db.prepare(
+  "SELECT * FROM goal_work_dispatches WHERE work_item_id=?"
+ ).get(workItemId);
+ return row?rowToDispatch(row):null;
+}
+
+export function listGoalWorkDispatches(goalId:string):GoalWorkDispatch[]{
+ return(db.prepare(
+  "SELECT * FROM goal_work_dispatches WHERE goal_id=? ORDER BY created_at,work_item_id"
+ ).all(goalId) as any[]).map(rowToDispatch);
+}
+
+export function createGoalWorkDispatch(input:{
+ workItemId:string;
+ goalId:string;
+ projectId:string;
+ taskId:string;
+ jobId?:string|null;
+ status?:GoalWorkDispatchStatus;
+}):GoalWorkDispatch{
+ const existing=getGoalWorkDispatch(input.workItemId);
+ if(existing)return existing;
+ const time=now();
+ db.prepare(`
+  INSERT INTO goal_work_dispatches(
+   work_item_id,goal_id,project_id,task_id,job_id,status,created_at,updated_at
+  ) VALUES(?,?,?,?,?,?,?,?)
+ `).run(
+  input.workItemId,
+  input.goalId,
+  input.projectId,
+  input.taskId,
+  input.jobId??null,
+  input.status??"queued",
+  time,
+  time
+ );
+ return getGoalWorkDispatch(input.workItemId)!;
+}
+
+export function updateGoalWorkDispatch(
+ workItemId:string,
+ status:GoalWorkDispatchStatus,
+ jobId?:string|null
+):GoalWorkDispatch{
+ const current=getGoalWorkDispatch(workItemId);
+ if(!current)throw new Error(`Goal work dispatch not found: ${workItemId}`);
+ db.prepare(`
+  UPDATE goal_work_dispatches
+  SET status=?,job_id=COALESCE(?,job_id),updated_at=?
+  WHERE work_item_id=?
+ `).run(status,jobId??null,now(),workItemId);
+ return getGoalWorkDispatch(workItemId)!;
+}
+
+export function deleteGoalWorkDispatches(goalId:string){
+ return Number(
+  db.prepare("DELETE FROM goal_work_dispatches WHERE goal_id=?").run(goalId).changes
+ );
+}

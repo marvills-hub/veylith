@@ -1,0 +1,1745 @@
+
+
+============================================================
+FILE: src\team\goal-role-executor.service.ts
+============================================================
+import {synchronizeTaskDevelopment} from "../development/development-lifecycle.service.js";
+import crypto from "node:crypto";
+import {db,memory} from "../database/database.js";
+import {now} from "../config/config.js";
+import {event} from "../core/telemetry.js";
+import {designArchitecture} from "../agent/architect.service.js";
+import {createDevelopmentPlan} from "../agent/development-planner.service.js";
+import {developProject} from "../agent/developer.service.js";
+import {reviewProject} from "../agent/reviewer.service.js";
+import {applyDevelopment,validateDevelopment} from "../orchestration/pipeline.service.js";
+import {initializeGit,publishToGitHub} from "../git/git.service.js";
+import {buildSharedProjectContext} from "./shared-context.service.js";
+import {
+ prepareGoalTaskExecution,
+ completeGoalTaskExecution,
+ goalExecutionForTask
+} from "./goal-team-execution.service.js";
+import {consumeIncomingHandoffs,createWorkHandoff,deliverWorkHandoff} from "./handoff.service.js";
+import {listGoalHandoffs} from "./handoff.repository.js";
+import {loadGoalTaskGraph} from "../goals/goal-task-graph.service.js";
+import {recoverGoalWork} from "./team-recovery.service.js";
+import type {AgentRole} from "./team.types.js";
+import type {
+ ArchitectureResult,
+ DevelopmentPlan,
+ DevelopmentResult
+} from "../orchestration/pipeline.types.js";
+
+export type GoalRoleResultStatus="running"|"completed"|"failed";
+
+export interface GoalRoleResult{
+ id:string;
+ goalId:string;
+ projectId:string;
+ workItemId:string;
+ assignmentId:string;
+ taskId:string;
+ role:AgentRole;
+ status:GoalRoleResultStatus;
+ summary:string|null;
+ result:any;
+ error:string|null;
+ startedAt:string;
+ completedAt:string|null;
+ updatedAt:string;
+}
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS goal_role_results(
+ id TEXT PRIMARY KEY,
+ goal_id TEXT NOT NULL,
+ project_id TEXT NOT NULL,
+ work_item_id TEXT NOT NULL,
+ assignment_id TEXT NOT NULL,
+ task_id TEXT NOT NULL,
+ role TEXT NOT NULL,
+ status TEXT NOT NULL,
+ summary TEXT,
+ result_json TEXT,
+ error TEXT,
+ started_at TEXT NOT NULL,
+ completed_at TEXT,
+ updated_at TEXT NOT NULL,
+ UNIQUE(assignment_id)
+);
+CREATE INDEX IF NOT EXISTS idx_goal_role_results_goal
+ ON goal_role_results(goal_id);
+CREATE INDEX IF NOT EXISTS idx_goal_role_results_project
+ ON goal_role_results(project_id);
+CREATE INDEX IF NOT EXISTS idx_goal_role_results_work
+ ON goal_role_results(work_item_id);
+CREATE INDEX IF NOT EXISTS idx_goal_role_results_task
+ ON goal_role_results(task_id);
+CREATE INDEX IF NOT EXISTS idx_goal_role_results_status
+ ON goal_role_results(status);
+`);
+
+function parseJSON(value:any){
+ if(value===null||value===undefined||value==="")return null;
+ try{return JSON.parse(String(value));}catch{return null;}
+}
+
+function mapResult(row:any):GoalRoleResult{
+ return{
+  id:String(row.id),
+  goalId:String(row.goal_id),
+  projectId:String(row.project_id),
+  workItemId:String(row.work_item_id),
+  assignmentId:String(row.assignment_id),
+  taskId:String(row.task_id),
+  role:row.role,
+  status:row.status,
+  summary:row.summary?String(row.summary):null,
+  result:parseJSON(row.result_json),
+  error:row.error?String(row.error):null,
+  startedAt:String(row.started_at),
+  completedAt:row.completed_at?String(row.completed_at):null,
+  updatedAt:String(row.updated_at)
+ };
+}
+
+export function getGoalRoleResult(id:string){
+ const row=db.prepare("SELECT * FROM goal_role_results WHERE id=?").get(id);
+ return row?mapResult(row):null;
+}
+
+export function getAssignmentRoleResult(assignmentId:string){
+ const row=db.prepare(`
+  SELECT *
+  FROM goal_role_results
+  WHERE assignment_id=?
+  LIMIT 1
+ `).get(assignmentId);
+ return row?mapResult(row):null;
+}
+
+export function getWorkRoleResult(workItemId:string){
+ const row=db.prepare(`
+  SELECT *
+  FROM goal_role_results
+  WHERE work_item_id=?
+  ORDER BY started_at DESC
+  LIMIT 1
+ `).get(workItemId);
+ return row?mapResult(row):null;
+}
+
+export function listGoalRoleResults(goalId:string){
+ return(db.prepare(`
+  SELECT *
+  FROM goal_role_results
+  WHERE goal_id=?
+  ORDER BY started_at,id
+ `).all(goalId) as any[]).map(mapResult);
+}
+
+export function deleteGoalRoleResults(goalId:string){
+ return Number(
+  db.prepare("DELETE FROM goal_role_results WHERE goal_id=?").run(goalId).changes
+ );
+}
+
+function beginRoleResult(input:{
+ goalId:string;
+ projectId:string;
+ workItemId:string;
+ assignmentId:string;
+ taskId:string;
+ role:AgentRole;
+}){
+ const existing=getAssignmentRoleResult(input.assignmentId);
+ if(existing)return existing;
+ const time=now();
+ const id=`rrs_${crypto.randomBytes(8).toString("hex")}`;
+ db.prepare(`
+  INSERT INTO goal_role_results(
+   id,goal_id,project_id,work_item_id,assignment_id,task_id,
+   role,status,summary,result_json,error,started_at,completed_at,updated_at
+  ) VALUES(?,?,?,?,?,?,?,'running',NULL,NULL,NULL,?,NULL,?)
+ `).run(
+  id,
+  input.goalId,
+  input.projectId,
+  input.workItemId,
+  input.assignmentId,
+  input.taskId,
+  input.role,
+  time,
+  time
+ );
+ return getGoalRoleResult(id)!;
+}
+
+function completeRoleResult(id:string,summary:string,result:any){
+ const time=now();
+ db.prepare(`
+  UPDATE goal_role_results
+  SET status='completed',
+      summary=?,
+      result_json=?,
+      error=NULL,
+      completed_at=COALESCE(completed_at,?),
+      updated_at=?
+  WHERE id=?
+ `).run(
+  summary||null,
+  JSON.stringify(result??null),
+  time,
+  time,
+  id
+ );
+ return getGoalRoleResult(id)!;
+}
+
+function failRoleResult(id:string,error:unknown){
+ const message=error instanceof Error?error.message:String(error);
+ db.prepare(`
+  UPDATE goal_role_results
+  SET status='failed',error=?,updated_at=?
+  WHERE id=?
+ `).run(message,now(),id);
+ return getGoalRoleResult(id)!;
+}
+
+function project(projectId:string){
+ const row=db.prepare("SELECT * FROM projects WHERE id=?").get(projectId) as any;
+ if(!row)throw new Error(`Project not found: ${projectId}`);
+ return row;
+}
+
+function resultSummary(role:AgentRole,result:any){
+ if(result?.summary)return String(result.summary);
+ if(role==="tester"){
+  return result?.success
+   ?"Validation completed successfully."
+   :"Validation failed.";
+ }
+ if(role==="delivery"){
+  return "Repository delivery completed.";
+ }
+ return `${role} work completed.`;
+}
+
+function dependencyResults(goalId:string,workItemId:string){
+ const graph=loadGoalTaskGraph(goalId);
+ const work=graph.items.find(item=>item.id===workItemId);
+ if(!work)throw new Error(`Goal work item not found: ${workItemId}`);
+ const keys=new Set(work.dependencies);
+ return graph.items
+  .filter(item=>keys.has(item.key))
+  .map(item=>({
+   work:item,
+   roleResult:getWorkRoleResult(item.id)
+  }));
+}
+
+function findResult<T>(
+ dependencies:ReturnType<typeof dependencyResults>,
+ predicate:(result:GoalRoleResult)=>boolean
+):T|null{
+ for(const dependency of dependencies){
+  const result=dependency.roleResult;
+  if(result&&result.status==="completed"&&predicate(result)){
+   return result.result as T;
+  }
+ }
+ return null;
+}
+
+function architectureFrom(
+ dependencies:ReturnType<typeof dependencyResults>
+):ArchitectureResult|null{
+ for(const dependency of dependencies){
+  const record=dependency.roleResult;
+  if(!record||record.status!=="completed")continue;
+  const raw=record.result;
+  if(record.role==="architect"&&raw?.architecture)return raw.architecture;
+  if(raw?.architecture?.summary&&Array.isArray(raw.architecture?.structure)){
+   return raw.architecture;
+  }
+ }
+ return null;
+}
+
+function planFrom(
+ dependencies:ReturnType<typeof dependencyResults>
+):DevelopmentPlan|null{
+ for(const dependency of dependencies){
+  const record=dependency.roleResult;
+  if(!record||record.status!=="completed")continue;
+  const raw=record.result;
+  if(raw?.plan?.summary&&Array.isArray(raw.plan?.files))return raw.plan;
+  if(record.role==="planner"&&raw?.summary&&Array.isArray(raw?.files))return raw;
+ }
+ return null;
+}
+
+function developmentFrom(
+ dependencies:ReturnType<typeof dependencyResults>
+):DevelopmentResult|null{
+ for(const dependency of dependencies){
+  const record=dependency.roleResult;
+  if(!record||record.status!=="completed")continue;
+  const raw=record.result;
+  if(raw?.development?.summary&&Array.isArray(raw.development?.files)){
+   return raw.development;
+  }
+  if(
+   record.role==="developer"&&
+   raw?.summary&&
+   Array.isArray(raw?.files)&&
+   Array.isArray(raw?.commands)
+  ){
+   return raw;
+  }
+ }
+ return null;
+}
+
+function validationFrom(dependencies:ReturnType<typeof dependencyResults>){
+ for(const dependency of dependencies){
+  const record=dependency.roleResult;
+  if(!record||record.status!=="completed")continue;
+  if(record.result?.validation)return record.result.validation;
+  if(record.role==="tester"&&typeof record.result?.success==="boolean"){
+   return record.result;
+  }
+ }
+ return null;
+}
+
+function syntheticArchitecture(context:any):ArchitectureResult{
+ return{
+  summary:`Use the existing repository architecture for ${context.work.title}.`,
+  stack:context.repository?.profile?.frameworks??[],
+  structure:context.repository?.context?.selectedFiles?.map((file:any)=>file.path)??[],
+  decisions:["Preserve the existing repository architecture and make the smallest required change."],
+  risks:[]
+ };
+}
+
+async function executeArchitect(task:any,projectRow:any){
+ const architecture=await designArchitecture(task,projectRow);
+ return{
+  summary:architecture.summary,
+  architecture
+ };
+}
+
+async function executePlanner(
+ task:any,
+ projectRow:any,
+ context:any,
+ dependencies:ReturnType<typeof dependencyResults>
+){
+ const architecture=architectureFrom(dependencies)||syntheticArchitecture(context);
+ const plan=await createDevelopmentPlan(task,projectRow,architecture);
+ return{
+  summary:plan.summary,
+  architecture,
+  plan
+ };
+}
+
+async function executeDeveloper(
+ task:any,
+ projectRow:any,
+ context:any,
+ dependencies:ReturnType<typeof dependencyResults>
+){
+ const architecture=architectureFrom(dependencies)||syntheticArchitecture(context);
+ const existingPlan=planFrom(dependencies);
+ const plan=existingPlan||await createDevelopmentPlan(task,projectRow,architecture);
+ const development=await developProject(task,projectRow,architecture,plan);
+ await applyDevelopment(development,task,projectRow,plan);
+ return{
+  summary:development.summary,
+  architecture,
+  plan,
+  development
+ };
+}
+
+async function executeTester(
+ task:any,
+ projectRow:any,
+ dependencies:ReturnType<typeof dependencyResults>
+){
+ const development=developmentFrom(dependencies);
+ if(!development){
+  throw new Error("Tester requires a completed developer result with validation commands.");
+ }
+ let validation=await validateDevelopment(development,task,projectRow);
+ let finalDevelopment=development;
+ if(!validation.success){
+  const managed=goalExecutionForTask(task.id);
+  const assignment=managed
+   ?db.prepare(`
+     SELECT *
+     FROM agent_assignments
+     WHERE goal_id=? AND work_item_id=? AND status='working'
+     ORDER BY created_at DESC
+     LIMIT 1
+    `).get(managed.goal.id,managed.workItemId) as any
+   :null;
+  const context=managed
+   ?await buildSharedProjectContext({
+     goalId:managed.goal.id,
+     workItemId:managed.workItemId,
+     workspace:projectRow.workspace
+    })
+   :null;
+  const dependencies=managed
+   ?dependencyResults(managed.goal.id,managed.workItemId)
+   :[];
+  const architecture=architectureFrom(dependencies)||
+   (context?syntheticArchitecture(context):null);
+  const plan=planFrom(dependencies);
+  if(!managed||!assignment||!architecture||!plan){
+   const failure=validation.failure;
+   throw new Error(
+    `Validation failed: ${failure?.command||"command"} ${(failure?.args||[]).join(" ")} | ${failure?.stderr||failure?.stdout||"unknown failure"}`
+   );
+  }
+  const recovered=await recoverGoalWork({
+   goalId:managed.goal.id,
+   projectId:task.project_id,
+   workItemId:managed.workItemId,
+   assignmentId:String(assignment.id),
+   task,
+   project:projectRow,
+   architecture,
+   plan,
+   development,
+   failure:validation
+  });
+  if(!recovered.recovered){
+   const failure=recovered.validation?.failure;
+   throw new Error(
+    `Team recovery exhausted: ${failure?.stderr||failure?.stdout||"validation still failing"}`
+   );
+  }
+  finalDevelopment=recovered.development;
+  validation=recovered.validation;
+ }
+ return{
+  summary:"Validation completed successfully.",
+  development:{
+   summary:finalDevelopment.summary,
+   files:finalDevelopment.files.map(file=>file.path),
+   commands:finalDevelopment.commands
+  },
+  validation,
+  recovered:finalDevelopment!==development
+ };
+}
+
+async function executeReviewer(
+ task:any,
+ projectRow:any,
+ context:any,
+ dependencies:ReturnType<typeof dependencyResults>
+){
+ const architecture=architectureFrom(dependencies)||syntheticArchitecture(context);
+ const plan=planFrom(dependencies);
+ const development=developmentFrom(dependencies);
+ const validation=validationFrom(dependencies);
+ if(!plan)throw new Error("Reviewer requires a development plan.");
+ if(!development)throw new Error("Reviewer requires a development result.");
+ if(!validation)throw new Error("Reviewer requires validation evidence.");
+ const review=await reviewProject(
+  task,
+  projectRow,
+  architecture,
+  plan,
+  development,
+  validation
+ );
+ if(!review.approved){
+  throw new Error(
+   `Review rejected: ${review.summary}${review.issues?.length?` | ${review.issues.join("; ")}`:""}`
+  );
+ }
+ return{
+  summary:review.summary,
+  architecture,
+  plan,
+  development:{
+   summary:development.summary,
+   files:development.files.map(file=>file.path),
+   commands:development.commands
+  },
+  validation,
+  review
+ };
+}
+
+async function executeDelivery(task:any,projectRow:any){
+ const git=await initializeGit(task,projectRow);
+ const fresh=project(projectRow.id);
+ const github=await publishToGitHub(task,fresh);
+ return{
+  summary:"Git and GitHub delivery completed.",
+  git,
+  github
+ };
+}
+
+async function executeRole(
+ role:AgentRole,
+ task:any,
+ projectRow:any,
+ context:any,
+ dependencies:ReturnType<typeof dependencyResults>
+){
+ switch(role){
+  case "architect":
+   return executeArchitect(task,projectRow);
+  case "planner":
+   return executePlanner(task,projectRow,context,dependencies);
+  case "developer":
+   return executeDeveloper(task,projectRow,context,dependencies);
+  case "tester":
+   return executeTester(task,projectRow,dependencies);
+  case "reviewer":
+   return executeReviewer(task,projectRow,context,dependencies);
+  case "delivery":
+   return executeDelivery(task,projectRow);
+  case "documentation":
+   return executeDeveloper(task,projectRow,context,dependencies);
+  case "diagnostic":
+  case "repair":
+   throw new Error(`${role} is a recovery role and cannot execute as a normal graph work item yet.`);
+  default:
+   throw new Error(`Unsupported team role: ${role}`);
+ }
+}
+
+function handoffExists(fromAssignmentId:string,toWorkItemId:string){
+ return listGoalHandoffs(
+  String(
+   db.prepare("SELECT goal_id FROM agent_assignments WHERE id=?")
+    .get(fromAssignmentId)?.goal_id??""
+  )
+ ).some(item=>
+  item.fromAssignmentId===fromAssignmentId&&
+  item.toWorkItemId===toWorkItemId&&
+  item.status!=="cancelled"
+ );
+}
+
+function createDependencyHandoffs(input:{
+ goalId:string;
+ workItemId:string;
+ assignmentId:string;
+ role:AgentRole;
+ roleResult:GoalRoleResult;
+}){
+ const graph=loadGoalTaskGraph(input.goalId);
+ const source=graph.items.find(item=>item.id===input.workItemId);
+ if(!source)return[];
+ const targets=graph.items.filter(item=>item.dependencies.includes(source.key));
+ const created=[];
+ for(const target of targets){
+  if(handoffExists(input.assignmentId,target.id))continue;
+  const handoff=createWorkHandoff({
+   goalId:input.goalId,
+   fromAssignmentId:input.assignmentId,
+   toWorkItemId:target.id,
+   summary:input.roleResult.summary||`${input.role} completed ${source.title}.`,
+   decisions:[
+    `${input.role} completed work item ${source.key}.`
+   ],
+   artifacts:[],
+   evidence:[
+    {
+     type:input.role==="tester"?"validation":"other",
+     summary:input.roleResult.summary||`${source.title} completed.`,
+     reference:input.roleResult.id
+    }
+   ],
+   risks:[],
+   recommendations:[
+    `Use role result ${input.roleResult.id} as upstream execution evidence.`
+   ],
+   metadata:{
+    role:input.role,
+    roleResultId:input.roleResult.id,
+    sourceWorkKey:source.key
+   }
+  });
+  created.push(deliverWorkHandoff(handoff.id));
+ }
+ return created;
+}
+
+export async function executeGoalTeamTask(task:any){
+ const managed=goalExecutionForTask(task.id);
+ if(!managed)return null;
+ const prepared=prepareGoalTaskExecution(task.id);
+ synchronizeTaskDevelopment(task.id);
+ if(!prepared)return null;
+ if(prepared.alreadyTerminal){
+  return{
+   managed:true,
+   skipped:true,
+   goalId:prepared.goalId,
+   workItemId:prepared.workItemId
+  };
+ }
+ if(!prepared.assignment){
+  throw new Error(`No team assignment exists for goal work ${prepared.workItemId}.`);
+ }
+ const projectRow=project(task.project_id);
+ const context=await buildSharedProjectContext({
+  goalId:prepared.goalId,
+  workItemId:prepared.workItemId,
+  workspace:projectRow.workspace
+ });
+ const executionTask={
+  ...task,
+  prompt:[
+   task.prompt,
+   "",
+   "VEYLITH SHARED PROJECT CONTEXT:",
+   context.prompt
+  ].join("\n")
+ };
+ const roleResult=beginRoleResult({
+  goalId:prepared.goalId,
+  projectId:task.project_id,
+  workItemId:prepared.workItemId,
+  assignmentId:prepared.assignment.id,
+  taskId:task.id,
+  role:prepared.assignment.role
+ });
+ if(roleResult.status==="completed"){
+  completeGoalTaskExecution(task.id);
+  synchronizeTaskDevelopment(task.id);
+  return{
+   managed:true,
+   resumed:true,
+   roleResult
+  };
+ }
+ try{
+  consumeIncomingHandoffs(prepared.workItemId,prepared.assignment.id);
+  const dependencies=dependencyResults(prepared.goalId,prepared.workItemId);
+  event("team.role_started",`${prepared.assignment.role} started ${context.work.title}`,{
+   taskId:task.id,
+   projectId:task.project_id,
+   component:"team-execution",
+   data:{
+    goalId:prepared.goalId,
+    workItemId:prepared.workItemId,
+    assignmentId:prepared.assignment.id,
+    role:prepared.assignment.role
+   }
+  });
+  const result=await executeRole(
+   prepared.assignment.role,
+   executionTask,
+   projectRow,
+   context,
+   dependencies
+  );
+  const completed=completeRoleResult(
+   roleResult.id,
+   resultSummary(prepared.assignment.role,result),
+   result
+  );
+  memory(
+   task.project_id,
+   "team_role_result",
+   JSON.stringify({
+    goalId:prepared.goalId,
+    workItemId:prepared.workItemId,
+    assignmentId:prepared.assignment.id,
+    role:prepared.assignment.role,
+    roleResultId:completed.id,
+    summary:completed.summary
+   })
+  );
+  const handoffs=createDependencyHandoffs({
+   goalId:prepared.goalId,
+   workItemId:prepared.workItemId,
+   assignmentId:prepared.assignment.id,
+   role:prepared.assignment.role,
+   roleResult:completed
+  });
+  const advanced=completeGoalTaskExecution(task.id);
+  synchronizeTaskDevelopment(task.id);
+  event("team.role_completed",`${prepared.assignment.role} completed ${context.work.title}`,{
+   taskId:task.id,
+   projectId:task.project_id,
+   component:"team-execution",
+   data:{
+    goalId:prepared.goalId,
+    workItemId:prepared.workItemId,
+    assignmentId:prepared.assignment.id,
+    role:prepared.assignment.role,
+    roleResultId:completed.id,
+    handoffs:handoffs.length,
+    nextDispatches:advanced?.dispatched?.length??0
+   }
+  });
+  return{
+   managed:true,
+   roleResult:completed,
+   handoffs,
+   advanced
+  };
+ }catch(error){
+  failRoleResult(roleResult.id,error);
+  throw error;
+ }
+}
+
+
+
+
+============================================================
+FILE: src\development\development-lifecycle.service.ts
+============================================================
+import {db} from "../database/database.js";
+import {
+ initializeDevelopmentSession,
+ synchronizeDevelopmentSession,
+ recoverDevelopmentSession
+} from "./development-session.service.js";
+
+function goalForTask(taskId:string){
+ return db.prepare(`
+  SELECT g.id AS goal_id,g.project_id
+  FROM goal_work_dispatches d
+  JOIN project_goals g ON g.id=d.goal_id
+  WHERE d.task_id=?
+  LIMIT 1
+ `).get(taskId) as {goal_id:string;project_id:string}|undefined;
+}
+
+function latestSession(goalId:string){
+ return db.prepare(`
+  SELECT id,status
+  FROM development_sessions
+  WHERE goal_id=?
+  ORDER BY created_at DESC
+  LIMIT 1
+ `).get(goalId) as {id:string;status:string}|undefined;
+}
+
+export function synchronizeGoalDevelopment(goalId:string){
+ const goal=db.prepare(`
+  SELECT id,project_id
+  FROM project_goals
+  WHERE id=?
+ `).get(goalId) as {id:string;project_id:string}|undefined;
+ if(!goal)return null;
+
+ let session=latestSession(goalId);
+
+ if(!session){
+  const created=initializeDevelopmentSession(goalId);
+  session={id:created.session.id,status:created.session.status};
+ }
+
+ if(session.status==="completed"||session.status==="failed"||session.status==="cancelled"){
+  return synchronizeDevelopmentSession(session.id);
+ }
+
+ return synchronizeDevelopmentSession(session.id);
+}
+
+export function synchronizeTaskDevelopment(taskId:string){
+ const managed=goalForTask(taskId);
+ if(!managed)return null;
+ return synchronizeGoalDevelopment(managed.goal_id);
+}
+
+export function recoverActiveDevelopmentSessions(){
+ const rows=db.prepare(`
+  SELECT DISTINCT project_id
+  FROM development_sessions
+  WHERE status IN ('active','paused')
+  ORDER BY project_id
+ `).all() as {project_id:string}[];
+
+ const recovered=[];
+
+ for(const row of rows){
+  const snapshot=recoverDevelopmentSession(row.project_id);
+  if(snapshot)recovered.push(snapshot);
+ }
+
+ return recovered;
+}
+
+
+============================================================
+FILE: src\validation\validation-repair.service.ts
+============================================================
+import{db,memory}from"../database/database.js";
+import{repairProject}from"../agent/repair.service.js";
+import{applyDevelopment}from"../orchestration/pipeline.service.js";
+import type{DevelopmentResult}from"../orchestration/pipeline.types.js";
+import{
+ createValidationRepairAttempt,
+ getLatestDiagnosticRepairAttempt,
+ listFingerprintValidationRepairs,
+ setValidationRepairAttemptState
+}from"./validation-repair.repository.js";
+import{getRunValidationDiagnostic}from"./validation-diagnostic.repository.js";
+import type{
+ ValidationRepairAttempt,
+ ValidationRepairDecision
+}from"./validation-repair.types.js";
+
+type RepairFn=(
+ task:any,
+ project:any,
+ architecture:any,
+ plan:any,
+ failure:any,
+ review?:any,
+ diagnostic?:any,
+ history?:any[]
+)=>Promise<DevelopmentResult>;
+
+type ApplyFn=(
+ result:DevelopmentResult,
+ task:any,
+ project:any,
+ plan?:any
+)=>Promise<any>;
+
+function runRow(runId:string){
+ return db.prepare(`
+  SELECT * FROM validation_runs WHERE id=?
+ `).get(runId) as any;
+}
+
+function validationEvidence(runId:string){
+ const rows=db.prepare(`
+  SELECT *
+  FROM validation_results
+  WHERE run_id=?
+  ORDER BY created_at ASC
+ `).all(runId) as any[];
+ const failure=rows.find(row=>
+  String(row.status)==="failed"||
+  (row.exit_code!==null&&Number(row.exit_code)!==0)
+ )||null;
+ return{
+  success:false,
+  runId,
+  failure:failure?{
+   id:String(failure.id),
+   stage:String(failure.stage||""),
+   command:String(failure.command||""),
+   args:(()=>{
+    try{return JSON.parse(String(failure.args_json||"[]"));}catch{return[];}
+   })(),
+   exitCode:failure.exit_code===null?null:Number(failure.exit_code),
+   stdout:String(failure.stdout||""),
+   stderr:String(failure.stderr||""),
+   failureKind:String(failure.failure_kind||"unknown"),
+   fingerprint:String(failure.fingerprint||"")
+  }:null,
+  results:rows
+ };
+}
+
+function scopeFor(appliedSameFingerprint:number,confidence:string){
+ if(appliedSameFingerprint>=2||confidence==="low")return"broad" as const;
+ if(appliedSameFingerprint>=1||confidence==="medium")return"expanded" as const;
+ return"focused" as const;
+}
+
+export function validationRepairDecision(runId:string):ValidationRepairDecision{
+ const run=runRow(runId);
+ if(!run)throw new Error(`Validation run not found: ${runId}`);
+ const diagnostic=getRunValidationDiagnostic(runId);
+ if(!diagnostic)
+  throw new Error(`Validation run ${runId} has no diagnostic evidence.`);
+
+ if(diagnostic.status==="blocked"){
+  return{
+   action:"blocked",
+   reason:diagnostic.error||"Diagnostic evidence blocks source repair.",
+   attempt:0,
+   scope:"focused",
+   previous:null
+  };
+ }
+
+ if(!["diagnosed","reused"].includes(diagnostic.status)||!diagnostic.diagnostic){
+  throw new Error(`Validation diagnostic ${diagnostic.id} is not ready for repair.`);
+ }
+
+ if(
+  diagnostic.failureKind==="infrastructure"||
+  diagnostic.failureKind==="timeout"
+ ){
+  return{
+   action:"blocked",
+   reason:`${diagnostic.failureKind} failures must be retried without source modification.`,
+   attempt:0,
+   scope:"focused",
+   previous:null
+  };
+ }
+
+ const previous=getLatestDiagnosticRepairAttempt(diagnostic.id);
+ if(previous&&["pending","repairing","applied"].includes(previous.status)){
+  return{
+   action:"resume",
+   reason:"Existing repair attempt must be resumed instead of duplicated.",
+   attempt:previous.attempt,
+   scope:previous.scope,
+   previous
+  };
+ }
+
+ const history=listFingerprintValidationRepairs(
+  String(run.project_id),
+  diagnostic.fingerprint,
+  100
+ );
+ const applied=history.filter(item=>item.status==="applied").length;
+ const attempt=(previous?.attempt||0)+1;
+ const scope=scopeFor(
+  applied,
+  String(diagnostic.diagnostic.confidence||"low")
+ );
+
+ return{
+  action:"repair",
+  reason:"Diagnostic evidence is ready for targeted source repair.",
+  attempt,
+  scope,
+  previous
+ };
+}
+
+function repairHistory(projectId:string,fingerprint:string){
+ return listFingerprintValidationRepairs(projectId,fingerprint,100).map(item=>({
+  attempt:item.attempt,
+  fingerprint:item.fingerprint,
+  summary:item.repair?.summary||item.error||`Validation repair attempt ${item.attempt}`,
+  files:item.files,
+  validation:{
+   success:item.status==="applied",
+   failure:item.status==="failed"?{
+    type:"repair",
+    message:item.error||"Repair attempt failed.",
+    fingerprint:item.fingerprint
+   }:undefined
+  }
+ }));
+}
+
+export async function executeTargetedValidationRepair(input:{
+ runId:string;
+ task:any;
+ project:any;
+ architecture:any;
+ plan:any;
+ review?:any;
+ repair?:RepairFn;
+ apply?:ApplyFn;
+}):Promise<ValidationRepairAttempt>{
+ const run=runRow(input.runId);
+ if(!run)throw new Error(`Validation run not found: ${input.runId}`);
+ if(String(run.project_id)!==String(input.project.id))
+  throw new Error(`Validation run ${input.runId} does not belong to project ${input.project.id}.`);
+ if(run.task_id&&String(run.task_id)!==String(input.task.id))
+  throw new Error(`Validation run ${input.runId} does not belong to task ${input.task.id}.`);
+
+ const diagnostic=getRunValidationDiagnostic(input.runId);
+ if(!diagnostic)
+  throw new Error(`Validation run ${input.runId} has no diagnostic evidence.`);
+
+ const decision=validationRepairDecision(input.runId);
+ const diagnosticResult=diagnostic.diagnostic;
+
+ if(decision.action!=="blocked"&&!diagnosticResult)
+  throw new Error(`Validation diagnostic ${diagnostic.id} has no diagnostic result.`);
+
+ if(decision.action==="blocked"){
+  const blocked=createValidationRepairAttempt({
+   runId:input.runId,
+   diagnosticId:diagnostic.id,
+   projectId:String(run.project_id),
+   taskId:run.task_id?String(run.task_id):null,
+   attempt:1,
+   fingerprint:diagnostic.fingerprint,
+   failureKind:diagnostic.failureKind,
+   scope:"focused",
+   status:"blocked"
+  });
+  return setValidationRepairAttemptState(blocked.id,"blocked",{
+   error:decision.reason
+  });
+ }
+
+ if(decision.action==="resume"&&decision.previous){
+  return decision.previous;
+ }
+
+ const attempt=createValidationRepairAttempt({
+  runId:input.runId,
+  diagnosticId:diagnostic.id,
+  projectId:String(run.project_id),
+  taskId:run.task_id?String(run.task_id):null,
+  attempt:decision.attempt,
+  fingerprint:diagnostic.fingerprint,
+  failureKind:diagnostic.failureKind,
+  scope:decision.scope
+ });
+
+ setValidationRepairAttemptState(attempt.id,"repairing",{error:null});
+
+ try{
+  const repair=input.repair||repairProject;
+  const apply=input.apply||applyDevelopment;
+  const evidence=validationEvidence(input.runId);
+  const history=repairHistory(
+   String(run.project_id),
+   diagnostic.fingerprint
+  );
+
+  const repairResult=await repair(
+   input.task,
+   input.project,
+   input.architecture,
+   input.plan,
+   evidence,
+   input.review,
+   diagnosticResult!,
+   history
+  );
+
+  if(!repairResult||!Array.isArray(repairResult.files))
+   throw new Error("Repair agent returned an invalid development result.");
+
+  const diagnosticFiles=new Set(
+   (diagnosticResult!.relevantFiles||[])
+    .map(file=>String(file).replace(/\\/g,"/").toLowerCase())
+  );
+
+  if(decision.scope==="focused"&&diagnosticFiles.size){
+   const unrelated=repairResult.files
+    .map(file=>String(file.path).replace(/\\/g,"/"))
+    .filter(file=>!diagnosticFiles.has(file.toLowerCase()));
+   if(unrelated.length){
+    throw new Error(
+     `Focused repair attempted unrelated files: ${unrelated.join(", ")}`
+    );
+   }
+  }
+
+  await apply(
+   repairResult,
+   input.task,
+   input.project,
+   input.plan
+  );
+
+  const files=repairResult.files.map(file=>file.path);
+
+  memory(
+   String(run.project_id),
+   "validation_repair",
+   JSON.stringify({
+    runId:input.runId,
+    diagnosticId:diagnostic.id,
+    fingerprint:diagnostic.fingerprint,
+    attempt:decision.attempt,
+    scope:decision.scope,
+    files
+   })
+  );
+
+  return setValidationRepairAttemptState(attempt.id,"applied",{
+   repair:repairResult,
+   files,
+   error:null
+  });
+ }catch(error){
+  const message=error instanceof Error?error.message:String(error);
+  setValidationRepairAttemptState(attempt.id,"failed",{
+   error:message
+  });
+  throw error;
+ }
+}
+
+
+
+============================================================
+FILE: src\validation\repair-verification.service.ts
+============================================================
+import{db,memory}from"../database/database.js";
+import{getValidationRepairAttempt}from"./validation-repair.repository.js";
+import{
+ createRepairVerification,
+ completeRepairVerification,
+ getRepairAttemptVerification
+}from"./repair-verification.repository.js";
+import type{
+ RepairVerificationAnalysis
+}from"./repair-verification.types.js";
+
+interface Evidence{
+ id:string;
+ commandId:string;
+ stage:string;
+ status:string;
+ fingerprint:string|null;
+}
+
+function run(runId:string){
+ return db.prepare(`
+  SELECT * FROM validation_runs WHERE id=?
+ `).get(runId) as any;
+}
+
+function evidence(runId:string):Evidence[]{
+ return(db.prepare(`
+  SELECT *
+  FROM validation_results
+  WHERE run_id=?
+  ORDER BY created_at ASC
+ `).all(runId) as any[]).map(row=>({
+  id:String(row.id),
+  commandId:String(row.command_id||row.stage||row.command||row.id),
+  stage:String(row.stage||"unknown"),
+  status:String(row.status||""),
+  fingerprint:row.fingerprint?String(row.fingerprint):null
+ }));
+}
+
+function key(item:Evidence){
+ return item.commandId;
+}
+
+export function analyzeRepairVerification(
+ beforeRunId:string,
+ afterRunId:string,
+ originalFingerprint:string
+):RepairVerificationAnalysis{
+ const before=evidence(beforeRunId);
+ const after=evidence(afterRunId);
+
+ if(!before.length)
+  throw new Error(`Before validation run ${beforeRunId} has no evidence.`);
+ if(!after.length)
+  throw new Error(`After validation run ${afterRunId} has no evidence.`);
+
+ const beforePassing=before
+  .filter(item=>item.status==="passed")
+  .map(key);
+
+ const afterPassing=after
+  .filter(item=>item.status==="passed")
+  .map(key);
+
+ const afterFailures=after
+  .filter(item=>item.status==="failed")
+  .map(item=>item.fingerprint||key(item));
+
+ const originalResolved=!after.some(item=>
+  item.status==="failed"&&
+  item.fingerprint===originalFingerprint
+ );
+
+ const afterByKey=new Map(
+  after.map(item=>[key(item),item])
+ );
+
+ const regressions=beforePassing.filter(commandId=>{
+  const result=afterByKey.get(commandId);
+  return !result||result.status!=="passed";
+ });
+
+ return{
+  originalResolved,
+  regressionFree:regressions.length===0,
+  regressions,
+  beforePassing,
+  afterPassing,
+  afterFailures
+ };
+}
+
+export function verifyValidationRepair(input:{
+ repairAttemptId:string;
+ afterRunId:string;
+}){
+ const repair=getValidationRepairAttempt(input.repairAttemptId);
+
+ if(!repair)
+  throw new Error(
+   `Validation repair attempt not found: ${input.repairAttemptId}`
+  );
+
+ if(repair.status!=="applied")
+  throw new Error(
+   `Validation repair ${repair.id} is not applied and cannot be verified.`
+  );
+
+ const beforeRun=run(repair.runId);
+ const afterRun=run(input.afterRunId);
+
+ if(!beforeRun)
+  throw new Error(`Before validation run not found: ${repair.runId}`);
+
+ if(!afterRun)
+  throw new Error(`After validation run not found: ${input.afterRunId}`);
+
+ if(String(beforeRun.project_id)!==repair.projectId)
+  throw new Error("Repair project does not match before validation run.");
+
+ if(String(afterRun.project_id)!==repair.projectId)
+  throw new Error("After validation run belongs to a different project.");
+
+ if(
+  repair.taskId&&
+  afterRun.task_id&&
+  String(afterRun.task_id)!==repair.taskId
+ ){
+  throw new Error("After validation run belongs to a different task.");
+ }
+
+ const existing=getRepairAttemptVerification(repair.id);
+ if(existing&&existing.status!=="pending")
+  return existing;
+
+ const verification=existing||createRepairVerification({
+  repairAttemptId:repair.id,
+  projectId:repair.projectId,
+  taskId:repair.taskId,
+  beforeRunId:repair.runId,
+  afterRunId:input.afterRunId,
+  originalFingerprint:repair.fingerprint
+ });
+
+ const analysis=analyzeRepairVerification(
+  repair.runId,
+  input.afterRunId,
+  repair.fingerprint
+ );
+
+ let status:"verified"|"regressed"|"failed";
+
+ if(!analysis.originalResolved){
+  status="failed";
+ }else if(!analysis.regressionFree){
+  status="regressed";
+ }else{
+  status="verified";
+ }
+
+ const summary=
+  status==="verified"
+   ?"Original validation failure resolved with no regression."
+   :status==="regressed"
+    ?`Original failure resolved but ${analysis.regressions.length} previously passing validation check(s) regressed.`
+    :"Original validation failure remains after repair.";
+
+ const completed=completeRepairVerification(
+  verification.id,
+  {
+   status,
+   originalResolved:analysis.originalResolved,
+   regressionFree:analysis.regressionFree,
+   regressions:analysis.regressions,
+   beforePassing:analysis.beforePassing,
+   afterPassing:analysis.afterPassing,
+   afterFailures:analysis.afterFailures,
+   summary
+  }
+ );
+
+ memory(
+  repair.projectId,
+  "repair_verification",
+  JSON.stringify({
+   repairAttemptId:repair.id,
+   beforeRunId:repair.runId,
+   afterRunId:input.afterRunId,
+   status,
+   originalFingerprint:repair.fingerprint,
+   originalResolved:analysis.originalResolved,
+   regressionFree:analysis.regressionFree,
+   regressions:analysis.regressions,
+   afterFailures:analysis.afterFailures
+  })
+ );
+
+ return completed;
+}
+
+============================================================
+FILE: src\team\team-recovery.service.ts
+============================================================
+import crypto from "node:crypto";
+import {db,memory} from "../database/database.js";
+import {now,MAX_REPAIR_ATTEMPTS} from "../config/config.js";
+import {event} from "../core/telemetry.js";
+import {
+ diagnoseFailure,
+ failureFingerprint,
+ repairHistory,
+ type DiagnosticResult,
+ type RepairHistoryItem
+} from "../agent/diagnostic.service.js";
+import {repairProject} from "../agent/repair.service.js";
+import {applyDevelopment,validateDevelopment} from "../orchestration/pipeline.service.js";
+import type {
+ ArchitectureResult,
+ DevelopmentPlan,
+ DevelopmentResult
+} from "../orchestration/pipeline.types.js";
+
+export type TeamRecoveryStatus="recovering"|"recovered"|"exhausted";
+
+export interface TeamRecoveryRecord{
+ id:string;
+ goalId:string;
+ projectId:string;
+ workItemId:string;
+ assignmentId:string;
+ taskId:string;
+ status:TeamRecoveryStatus;
+ attempts:number;
+ maxAttempts:number;
+ fingerprint:string|null;
+ diagnostic:DiagnosticResult|null;
+ validation:any;
+ error:string|null;
+ createdAt:string;
+ updatedAt:string;
+ completedAt:string|null;
+}
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS team_recoveries(
+ id TEXT PRIMARY KEY,
+ goal_id TEXT NOT NULL,
+ project_id TEXT NOT NULL,
+ work_item_id TEXT NOT NULL,
+ assignment_id TEXT NOT NULL,
+ task_id TEXT NOT NULL,
+ status TEXT NOT NULL,
+ attempts INTEGER NOT NULL DEFAULT 0,
+ max_attempts INTEGER NOT NULL,
+ fingerprint TEXT,
+ diagnostic_json TEXT,
+ validation_json TEXT,
+ error TEXT,
+ created_at TEXT NOT NULL,
+ updated_at TEXT NOT NULL,
+ completed_at TEXT,
+ UNIQUE(assignment_id)
+);
+CREATE INDEX IF NOT EXISTS idx_team_recoveries_goal
+ ON team_recoveries(goal_id);
+CREATE INDEX IF NOT EXISTS idx_team_recoveries_task
+ ON team_recoveries(task_id);
+CREATE INDEX IF NOT EXISTS idx_team_recoveries_status
+ ON team_recoveries(status);
+`);
+
+function parse(value:any){
+ if(value===null||value===undefined||value==="")return null;
+ try{return JSON.parse(String(value));}catch{return null;}
+}
+
+function map(row:any):TeamRecoveryRecord{
+ return{
+  id:String(row.id),
+  goalId:String(row.goal_id),
+  projectId:String(row.project_id),
+  workItemId:String(row.work_item_id),
+  assignmentId:String(row.assignment_id),
+  taskId:String(row.task_id),
+  status:row.status,
+  attempts:Number(row.attempts||0),
+  maxAttempts:Number(row.max_attempts||MAX_REPAIR_ATTEMPTS),
+  fingerprint:row.fingerprint?String(row.fingerprint):null,
+  diagnostic:parse(row.diagnostic_json),
+  validation:parse(row.validation_json),
+  error:row.error?String(row.error):null,
+  createdAt:String(row.created_at),
+  updatedAt:String(row.updated_at),
+  completedAt:row.completed_at?String(row.completed_at):null
+ };
+}
+
+export function getTeamRecovery(id:string){
+ const row=db.prepare("SELECT * FROM team_recoveries WHERE id=?").get(id);
+ return row?map(row):null;
+}
+
+export function getAssignmentRecovery(assignmentId:string){
+ const row=db.prepare(`
+  SELECT *
+  FROM team_recoveries
+  WHERE assignment_id=?
+  LIMIT 1
+ `).get(assignmentId);
+ return row?map(row):null;
+}
+
+export function listGoalRecoveries(goalId:string){
+ return(db.prepare(`
+  SELECT *
+  FROM team_recoveries
+  WHERE goal_id=?
+  ORDER BY created_at,id
+ `).all(goalId) as any[]).map(map);
+}
+
+export function deleteGoalRecoveries(goalId:string){
+ return Number(
+  db.prepare("DELETE FROM team_recoveries WHERE goal_id=?").run(goalId).changes
+ );
+}
+
+function ensureRecovery(input:{
+ goalId:string;
+ projectId:string;
+ workItemId:string;
+ assignmentId:string;
+ taskId:string;
+}){
+ const existing=getAssignmentRecovery(input.assignmentId);
+ if(existing)return existing;
+ const time=now();
+ const id=`rcv_${crypto.randomBytes(8).toString("hex")}`;
+ db.prepare(`
+  INSERT INTO team_recoveries(
+   id,goal_id,project_id,work_item_id,assignment_id,task_id,
+   status,attempts,max_attempts,fingerprint,diagnostic_json,
+   validation_json,error,created_at,updated_at,completed_at
+  ) VALUES(?,?,?,?,?,?,'recovering',0,?,NULL,NULL,NULL,NULL,?,?,NULL)
+ `).run(
+  id,input.goalId,input.projectId,input.workItemId,input.assignmentId,
+  input.taskId,MAX_REPAIR_ATTEMPTS,time,time
+ );
+ return getTeamRecovery(id)!;
+}
+
+function saveAttempt(
+ id:string,
+ attempt:number,
+ diagnostic:DiagnosticResult,
+ validation:any,
+ error:string|null
+){
+ db.prepare(`
+  UPDATE team_recoveries
+  SET status='recovering',
+      attempts=?,
+      fingerprint=?,
+      diagnostic_json=?,
+      validation_json=?,
+      error=?,
+      updated_at=?
+  WHERE id=?
+ `).run(
+  attempt,
+  diagnostic.fingerprint||null,
+  JSON.stringify(diagnostic),
+  JSON.stringify(validation??null),
+  error,
+  now(),
+  id
+ );
+ return getTeamRecovery(id)!;
+}
+
+function finish(
+ id:string,
+ status:"recovered"|"exhausted",
+ validation:any,
+ error:string|null
+){
+ const time=now();
+ db.prepare(`
+  UPDATE team_recoveries
+  SET status=?,
+      validation_json=?,
+      error=?,
+      updated_at=?,
+      completed_at=?
+  WHERE id=?
+ `).run(
+  status,
+  JSON.stringify(validation??null),
+  error,
+  time,
+  time,
+  id
+ );
+ return getTeamRecovery(id)!;
+}
+
+function taskRepairAttempts(taskId:string,count:number){
+ db.prepare(`
+  UPDATE tasks
+  SET repair_attempts=?,phase='repairing',updated_at=?
+  WHERE id=?
+ `).run(count,now(),taskId);
+}
+
+function normalizeFailure(error:unknown,validation?:any){
+ if(validation?.failure)return validation;
+ const message=error instanceof Error?error.message:String(error);
+ return{
+  success:false,
+  failure:{
+   command:"team-role-execution",
+   args:[],
+   stdout:"",
+   stderr:message,
+   code:1
+  },
+  results:[]
+ };
+}
+
+function repairHistoryForTask(taskId:string):RepairHistoryItem[]{
+ try{return repairHistory(taskId);}catch{return[];}
+}
+
+export async function recoverGoalWork(input:{
+ goalId:string;
+ projectId:string;
+ workItemId:string;
+ assignmentId:string;
+ task:any;
+ project:any;
+ architecture:ArchitectureResult;
+ plan:DevelopmentPlan;
+ development:DevelopmentResult;
+ failure:any;
+ error?:unknown;
+}){
+ let recovery=ensureRecovery({
+  goalId:input.goalId,
+  projectId:input.projectId,
+  workItemId:input.workItemId,
+  assignmentId:input.assignmentId,
+  taskId:input.task.id
+ });
+
+ if(recovery.status==="recovered"){
+  return{
+   recovered:true,
+   recovery,
+   development:input.development,
+   validation:recovery.validation
+  };
+ }
+
+ if(recovery.status==="exhausted"){
+  return{
+   recovered:false,
+   exhausted:true,
+   recovery,
+   development:input.development,
+   validation:recovery.validation
+  };
+ }
+
+ let development=input.development;
+ let validation=normalizeFailure(input.error,input.failure);
+ let history=repairHistoryForTask(input.task.id);
+ let attempt=Math.max(recovery.attempts,Number(input.task.repair_attempts||0));
+
+ while(!validation.success&&attempt<MAX_REPAIR_ATTEMPTS){
+  attempt++;
+  taskRepairAttempts(input.task.id,attempt);
+
+  event(
+   "team.recovery_started",
+   `Team recovery ${attempt}/${MAX_REPAIR_ATTEMPTS}`,
+   {
+    taskId:input.task.id,
+    projectId:input.projectId,
+    level:"warn",
+    component:"team-recovery",
+    data:{
+     goalId:input.goalId,
+     workItemId:input.workItemId,
+     assignmentId:input.assignmentId,
+     attempt,
+     fingerprint:failureFingerprint(validation)
+    }
+   }
+  );
+
+  const diagnostic=await diagnoseFailure(
+   input.task,
+   input.project,
+   input.architecture,
+   input.plan,
+   validation
+  );
+
+  saveAttempt(
+   recovery.id,
+   attempt,
+   diagnostic,
+   validation,
+   validation?.failure?.stderr||
+   validation?.failure?.stdout||
+   "Validation failed"
+  );
+
+  event(
+   "team.diagnostic_completed",
+   diagnostic.summary,
+   {
+    taskId:input.task.id,
+    projectId:input.projectId,
+    component:"team-recovery",
+    data:{
+     goalId:input.goalId,
+     workItemId:input.workItemId,
+     assignmentId:input.assignmentId,
+     attempt,
+     fingerprint:diagnostic.fingerprint,
+     confidence:diagnostic.confidence,
+     rootCause:diagnostic.rootCause
+    }
+   }
+  );
+
+  const repair=await repairProject(
+   input.task,
+   input.project,
+   input.architecture,
+   input.plan,
+   validation,
+   undefined,
+   diagnostic,
+   history
+  );
+
+  await applyDevelopment(
+   repair,
+   input.task,
+   input.project,
+   input.plan
+  );
+
+  development=repair;
+  validation=await validateDevelopment(
+   development,
+   input.task,
+   input.project
+  );
+
+  const item:RepairHistoryItem={
+   attempt,
+   summary:repair.summary,
+   files:repair.files.map(file=>file.path),
+   fingerprint:failureFingerprint(validation),
+   validation
+  };
+
+  history=[...history,item];
+
+  memory(
+   input.projectId,
+   "team_repair",
+   JSON.stringify({
+    goalId:input.goalId,
+    workItemId:input.workItemId,
+    assignmentId:input.assignmentId,
+    attempt,
+    diagnostic:{
+     summary:diagnostic.summary,
+     rootCause:diagnostic.rootCause,
+     fingerprint:diagnostic.fingerprint,
+     confidence:diagnostic.confidence
+    },
+    repair:{
+     summary:repair.summary,
+     files:repair.files.map(file=>file.path)
+    },
+    validation
+   })
+  );
+
+  if(validation.success){
+   recovery=finish(recovery.id,"recovered",validation,null);
+   event(
+    "team.recovery_completed",
+    `Recovered after ${attempt} repair attempt${attempt===1?"":"s"}`,
+    {
+     taskId:input.task.id,
+     projectId:input.projectId,
+     component:"team-recovery",
+     data:{
+      goalId:input.goalId,
+      workItemId:input.workItemId,
+      assignmentId:input.assignmentId,
+      attempts:attempt
+     }
+    }
+   );
+   return{
+    recovered:true,
+    recovery,
+    development,
+    validation
+   };
+  }
+ }
+
+ const message=
+  validation?.failure?.stderr||
+  validation?.failure?.stdout||
+  `Repair budget exhausted after ${attempt} attempts`;
+
+ recovery=finish(recovery.id,"exhausted",validation,message);
+
+ event(
+  "team.recovery_exhausted",
+  `Repair budget exhausted after ${attempt} attempts`,
+  {
+   taskId:input.task.id,
+   projectId:input.projectId,
+   level:"error",
+   component:"team-recovery",
+   data:{
+    goalId:input.goalId,
+    workItemId:input.workItemId,
+    assignmentId:input.assignmentId,
+    attempts:attempt,
+    fingerprint:failureFingerprint(validation)
+   }
+  }
+ );
+
+ return{
+  recovered:false,
+  exhausted:true,
+  recovery,
+  development,
+  validation
+ };
+}
+
+
+

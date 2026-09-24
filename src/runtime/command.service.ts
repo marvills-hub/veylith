@@ -4,6 +4,7 @@ import {now} from "../config/config.js";
 import {runSandboxCommand} from "../sandbox/sandbox-manager.service.js";
 import {assertWorkspaceCwd} from "../security/workspace-security.service.js";
 import {securityAllowed,securityRejected} from "../security/security-telemetry.service.js";
+import {assertAutonomousCommandSafe} from "../security/command-safety.service.js";
 
 function executionRecord(projectId:string,taskId:string,command:string,args:string[],code:number,stdout:string,stderr:string,duration:number){
  db.prepare("INSERT INTO executions(project_id,task_id,command,args,exit_code,stdout,stderr,duration_ms,created_at) VALUES(?,?,?,?,?,?,?,?,?)").run(
@@ -30,6 +31,7 @@ export async function runCommand(command:string,args:string[],cwd:string,taskId:
  const started=Date.now();
 
  try{
+  assertAutonomousCommandSafe(command,args);
   const workspace=projectWorkspace(projectId);
   const safeCwd=assertWorkspaceCwd(workspace,cwd);
 
@@ -125,3 +127,4 @@ export async function runCommand(command:string,args:string[],cwd:string,taskId:
   };
  }
 }
+

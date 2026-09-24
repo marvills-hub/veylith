@@ -1,4 +1,4 @@
-﻿import {getProjectGoal} from "./goal.repository.js";
+import {getProjectGoal} from "./goal.repository.js";
 import {
  listGoalWorkItems,
  newGoalWorkItem,
@@ -14,7 +14,7 @@ import type {
 
 const kinds=new Set<GoalWorkKind>([
  "analysis","architecture","implementation","test",
- "documentation","integration","delivery","other"
+ "review","documentation","integration","delivery","other"
 ]);
 
 const clean=(value:unknown)=>String(value??"").replace(/\s+/g," ").trim();
@@ -230,3 +230,6 @@ export function runnableGoalWork(goalId:string){
   .filter(item=>item.status==="ready")
   .sort((a,b)=>b.priority-a.priority||a.key.localeCompare(b.key));
 }
+
+
+

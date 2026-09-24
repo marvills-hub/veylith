@@ -1,0 +1,2199 @@
+VEYLITH v1.0 BATCH 7.1 PRODUCTION CONTRACTS
+
+============================================================
+FILE: src\orchestration\orchestrator.service.ts
+============================================================
+import {db,memory} from "../database/database.js";
+import {MAX_REPAIR_ATTEMPTS,now} from "../config/config.js";
+import {event,setPhase} from "../core/telemetry.js";
+import {designArchitecture} from "../agent/architect.service.js";
+import {createDevelopmentPlan} from "../agent/development-planner.service.js";
+import {developProject} from "../agent/developer.service.js";
+import {reviewProject} from "../agent/reviewer.service.js";
+import {repairProject} from "../agent/repair.service.js";
+import {diagnoseFailure,repairHistory,failureFingerprint} from "../agent/diagnostic.service.js";
+import {applyDevelopment,validateDevelopment} from "./pipeline.service.js";
+import {runStep} from "./phase.service.js";
+import {checkpoint,successfulRepairCount} from "./checkpoint.service.js";
+import {initializeGit,publishToGitHub} from "../git/git.service.js";
+import type {ArchitectureResult,DevelopmentPlan,DevelopmentResult,PipelineContext,ReviewResult} from "./pipeline.types.js";
+
+function save(projectId:string,type:string,value:unknown){
+ memory(projectId,type,JSON.stringify(value));
+}
+
+function updateRepairCount(taskId:string,count:number){
+ db.prepare("UPDATE tasks SET repair_attempts=?,updated_at=? WHERE id=?").run(count,now(),taskId);
+}
+
+function resumed(task:any,project:any,phase:string,type:string){
+ event("checkpoint.resumed",`${phase} restored from checkpoint`,{
+  taskId:task.id,
+  projectId:project.id,
+  data:{phase,type}
+ });
+}
+
+function progressForRepair(attempt:number){
+ return Math.min(72+(attempt-1)*6,84);
+}
+
+function progressForValidation(attempt:number){
+ return Math.min(76+(attempt-1)*6,88);
+}
+
+function progressForReview(attempt:number){
+ return Math.min(82+(attempt-1)*4,92);
+}
+
+export async function executeAutonomousPipeline(task:any,project:any){
+ const context:PipelineContext={task,project};
+
+ event("orchestrator.started","Autonomous development pipeline started",{
+  taskId:task.id,
+  projectId:project.id,
+  data:{attempt:task.attempts+1}
+ });
+
+ const savedArchitecture=checkpoint<ArchitectureResult>(project.id,"architecture");
+ if(savedArchitecture){
+  context.architecture=savedArchitecture;
+  resumed(task,project,"architecture","architecture");
+ }else{
+  context.architecture=await runStep(
+   task.id,project.id,"architecture","architect","Design project architecture",10,
+   async()=>{
+    const result=await designArchitecture(task,project);
+    save(project.id,"architecture",result);
+    return result;
+   },
+   {requirement:task.prompt}
+  );
+ }
+
+ const savedPlan=checkpoint<DevelopmentPlan>(project.id,"development_plan");
+ if(savedPlan){
+  context.plan=savedPlan;
+  resumed(task,project,"planning","development_plan");
+ }else{
+  context.plan=await runStep(
+   task.id,project.id,"planning","planner","Create development plan",20,
+   async()=>{
+    const result=await createDevelopmentPlan(task,project,context.architecture!);
+    save(project.id,"development_plan",result);
+    return result;
+   },
+   context.architecture
+  );
+ }
+
+ const savedDevelopment=checkpoint<DevelopmentResult>(project.id,"development");
+ if(savedDevelopment){
+  context.development=savedDevelopment;
+  resumed(task,project,"development","development");
+ }else{
+  context.development=await runStep(
+   task.id,project.id,"development","developer","Generate project implementation",40,
+   async()=>{
+    const result=await developProject(task,project,context.architecture!,context.plan!);
+    await applyDevelopment(result,task,project,context.plan);
+    save(project.id,"development",result);
+    return result;
+   },
+   context.plan
+  );
+ }
+
+ let repairAttempt=successfulRepairCount(project.id);
+ const latestRepairCheckpoint=repairAttempt>0
+  ?checkpoint<DevelopmentResult>(project.id,`repair_${repairAttempt}`)
+  :null;
+ if(latestRepairCheckpoint){
+  context.development=latestRepairCheckpoint;
+  resumed(task.id,project.id,"development",`repair_${repairAttempt}`);
+ }
+ updateRepairCount(task.id,repairAttempt);
+
+ let validation:any;
+ const initialValidationType=repairAttempt>0?`repair_validation_${repairAttempt}`:"validation";
+ const savedValidation=checkpoint<any>(project.id,initialValidationType);
+
+ if(savedValidation){
+  validation=savedValidation;
+  resumed(task,project,"validation",initialValidationType);
+ }else{
+  validation=await runStep(
+   task.id,project.id,"validation","runtime",
+   repairAttempt>0?`Validate repair - attempt ${repairAttempt}`:"Build and test generated project",
+   repairAttempt>0?progressForValidation(repairAttempt):65,
+   async()=>{
+    const result=await validateDevelopment(context.development!,task,project);
+    save(project.id,initialValidationType,result);
+    return result;
+   }
+  );
+ }
+
+ let review:ReviewResult|undefined;
+
+ while(true){
+  if(validation.success){
+   const reviewType=`review_${repairAttempt}`;
+   const savedReview=checkpoint<ReviewResult>(project.id,reviewType);
+
+   if(savedReview){
+    review=savedReview;
+    context.review=review;
+    resumed(task,project,"review",reviewType);
+   }else{
+    review=await runStep(
+     task.id,project.id,"review","reviewer","Review generated project",
+     progressForReview(repairAttempt),
+     async()=>{
+      const result=await reviewProject(task,project,context.architecture!,context.plan!,context.development!,validation);
+      save(project.id,reviewType,result);
+      return result;
+     }
+    );
+    context.review=review;
+   }
+
+   if(review.approved)break;
+  }
+
+  if(repairAttempt>=MAX_REPAIR_ATTEMPTS){
+   const reason=validation.success
+    ?`Reviewer rejected the implementation: ${review?.issues?.join("; ")||review?.summary||"unknown issue"}`
+    :`Validation failed: ${validation.failure?.stderr||validation.failure?.stdout||"unknown failure"}`;
+
+   const history=repairHistory(project.id);
+   const report={
+    reason,
+    repairAttempts:repairAttempt,
+    failureFingerprint:validation.success?null:failureFingerprint(validation),
+    validation,
+    review:review||null,
+    history,
+    exhaustedAt:now()
+   };
+
+   save(project.id,"diagnostic_failure_report",report);
+
+   event("repair.exhausted","Autonomous repair budget exhausted",{
+    taskId:task.id,
+    projectId:project.id,
+    level:"error",
+    data:{
+     repairAttempts:repairAttempt,
+     fingerprint:report.failureFingerprint,
+     history:history.map(item=>({
+      attempt:item.attempt,
+      summary:item.summary,
+      files:item.files,
+      fingerprint:item.fingerprint
+     }))
+    }
+   });
+
+   throw new Error(`Autonomous repair limit reached. ${reason}`);
+  }
+
+  const nextRepair=repairAttempt+1;
+  const repairType=`repair_${nextRepair}`;
+  const savedRepair=checkpoint<DevelopmentResult>(project.id,repairType);
+
+  if(savedRepair){
+   context.development=savedRepair;
+   repairAttempt=nextRepair;
+   updateRepairCount(task.id,repairAttempt);
+   resumed(task,project,"repair",repairType);
+  }else{
+   let diagnostic:any;
+
+   if(validation.success){
+    diagnostic={
+     summary:"Reviewer requested changes after successful validation.",
+     rootCause:review?.summary||"Reviewer findings require repair.",
+     evidence:review?.issues||[],
+     relevantFiles:[],
+     previousAttempts:[],
+     strategy:review?.issues||[],
+     avoid:[],
+     confidence:"medium",
+     fingerprint:`review_${nextRepair}`
+    };
+   }else{
+    diagnostic=await runStep(
+     task.id,
+     project.id,
+     "diagnosis",
+     "diagnostic",
+     `Diagnose validation failure - repair ${nextRepair}`,
+     Math.max(68,progressForRepair(nextRepair)-3),
+     async()=>diagnoseFailure(
+      task,
+      project,
+      context.architecture!,
+      context.plan!,
+      validation,
+      review
+     ),
+     {
+      failure:validation.failure,
+      fingerprint:failureFingerprint(validation),
+      previousRepairs:repairHistory(project.id).length
+     }
+    );
+
+    save(project.id,`diagnostic_${nextRepair}`,diagnostic);
+
+    event("diagnostic.completed",diagnostic.summary,{
+     taskId:task.id,
+     projectId:project.id,
+     data:{
+      attempt:nextRepair,
+      rootCause:diagnostic.rootCause,
+      confidence:diagnostic.confidence,
+      fingerprint:diagnostic.fingerprint,
+      relevantFiles:diagnostic.relevantFiles
+     }
+    });
+   }
+
+   const historyBeforeRepair=repairHistory(project.id);
+
+   const repair=await runStep(
+    task.id,
+    project.id,
+    "repair",
+    "repair",
+    `Repair implementation - attempt ${nextRepair}`,
+    progressForRepair(nextRepair),
+    async()=>{
+     const failure=validation.success
+      ?{type:"review",review}
+      :{type:"validation",validation};
+
+     const result=await repairProject(
+      task,
+      project,
+      context.architecture!,
+      context.plan!,
+      failure,
+      review,
+      diagnostic,
+      historyBeforeRepair
+     );
+
+     await applyDevelopment(result,task,project,context.plan);
+     save(project.id,repairType,result);
+     return result;
+    },
+    {
+     diagnostic,
+     previousRepairs:historyBeforeRepair.map(item=>({
+      attempt:item.attempt,
+      summary:item.summary,
+      files:item.files,
+      fingerprint:item.fingerprint
+     }))
+    }
+   );
+
+   context.development=repair;
+   repairAttempt=nextRepair;
+   updateRepairCount(task.id,repairAttempt);
+  }
+
+  const repairValidationType=`repair_validation_${repairAttempt}`;
+  const repairValidationCheckpoint=checkpoint<any>(project.id,repairValidationType);
+
+  if(repairValidationCheckpoint){
+   validation=repairValidationCheckpoint;
+   resumed(task,project,"validation",repairValidationType);
+  }else{
+   validation=await runStep(
+    task.id,
+    project.id,
+    "validation",
+    "runtime",
+    `Validate repair - attempt ${repairAttempt}`,
+    progressForValidation(repairAttempt),
+    async()=>{
+     const result=await validateDevelopment(context.development!,task,project);
+     save(project.id,repairValidationType,result);
+     return result;
+    }
+   );
+  }
+
+  if(!validation.success){
+   const currentFingerprint=failureFingerprint(validation);
+   const history=repairHistory(project.id);
+   const sameFailures=history.filter(item=>item.fingerprint===currentFingerprint);
+
+   if(sameFailures.length>1){
+    event("repair.stalled","The same validation failure survived multiple repairs",{
+     taskId:task.id,
+     projectId:project.id,
+     level:"warn",
+     data:{
+      fingerprint:currentFingerprint,
+      attempts:sameFailures.map(item=>item.attempt),
+      latestFailure:validation.failure
+     }
+    });
+   }
+  }
+ }
+
+ context.validation=validation;
+
+ const savedGit=checkpoint<any>(project.id,"git");
+ if(savedGit){
+  resumed(task,project,"versioning","git");
+ }else{
+  await runStep(
+   task.id,project.id,"versioning","git","Create local Git commit",94,
+   async()=>{
+    const result=await initializeGit(task,project);
+    save(project.id,"git",result);
+    return result;
+   }
+  );
+ }
+
+ const savedGithub=checkpoint<any>(project.id,"github");
+
+ if(savedGithub){
+  context.github=savedGithub;
+  resumed(task,project,"publishing","github");
+ }else{
+  const freshProject=db.prepare("SELECT * FROM projects WHERE id=?").get(project.id) as any;
+
+  context.github=await runStep(
+   task.id,project.id,"publishing","github","Publish project to GitHub",97,
+   async()=>{
+    const result=await publishToGitHub(task,freshProject);
+    save(project.id,"github",result);
+    return result;
+   }
+  );
+ }
+
+ setPhase(task.id,project.id,"completed",100);
+
+ const result={
+  architecture:context.architecture.summary,
+  plan:context.plan.summary,
+  implementation:context.development?.summary,
+  review:context.review?.summary,
+  repairAttempts:repairAttempt,
+  github:context.github
+ };
+
+ save(project.id,"completion",result);
+
+ event("orchestrator.completed","Autonomous development pipeline completed",{
+  taskId:task.id,
+  projectId:project.id,
+  data:{repairAttempts:repairAttempt}
+ });
+
+ return result;
+}
+
+
+
+
+
+============================================================
+FILE: src\orchestration\pipeline.types.ts
+============================================================
+export type DevelopmentPhase=
+ |"queued"
+ |"architecture"
+ |"planning"
+ |"development"
+ |"validation"
+ |"review"
+ |"repair"
+ | "diagnosis"
+ |"versioning"
+ |"publishing"
+ |"completed"
+ |"failed";
+
+export interface DevelopmentStep{
+ id:string;
+ taskId:string;
+ projectId:string;
+ phase:DevelopmentPhase;
+ agent:string;
+ title:string;
+ status:"queued"|"running"|"completed"|"failed";
+ sequence:number;
+ input?:unknown;
+ output?:unknown;
+ error?:string|null;
+ startedAt?:string|null;
+ completedAt?:string|null;
+ createdAt:string;
+ updatedAt:string;
+}
+
+export interface ArchitectureResult{
+ summary:string;
+ stack:string[];
+ structure:string[];
+ decisions:string[];
+ risks:string[];
+}
+
+export interface PlanFile{
+ path:string;
+ purpose:string;
+}
+
+export interface PlanCommand{
+ command:string;
+ args:string[];
+ purpose?:string;
+}
+
+export interface DevelopmentPlan{
+ summary:string;
+ architecture:string[];
+ files:PlanFile[];
+ commands:PlanCommand[];
+}
+
+export interface GeneratedFile{
+ path:string;
+ content:string;
+}
+
+export interface DevelopmentResult{
+ summary:string;
+ files:GeneratedFile[];
+ commands:PlanCommand[];
+}
+
+export interface ReviewResult{
+ approved:boolean;
+ summary:string;
+ issues:string[];
+ recommendations:string[];
+}
+
+export interface PipelineContext{
+ task:any;
+ project:any;
+ architecture?:ArchitectureResult;
+ plan?:DevelopmentPlan;
+ development?:DevelopmentResult;
+ review?:ReviewResult;
+ validation?:any;
+ github?:any;
+}
+
+
+
+
+
+============================================================
+FILE: src\core\task.service.ts
+============================================================
+import {mkdir} from "node:fs/promises";
+import crypto from "node:crypto";
+import path from "node:path";
+import {db,memory} from "../database/database.js";
+import {ROOT,MAX_REPAIR_ATTEMPTS,AI_KEY,now} from "../config/config.js";
+import {event,setWorker,setPhase} from "./telemetry.js";
+import {createPlan,repairPlan,applyPlan,validatePlan} from "../agent/planner.service.js";
+import {initializeGit,publishToGitHub} from "../git/git.service.js";
+import {walkFiles} from "../runtime/filesystem.service.js";
+import {executeAutonomousPipeline} from "../orchestration/orchestrator.service.js";
+import {getAIProvider} from "../agent/provider.service.js";
+import {AIProviderError,isPermanentAIError} from "./ai-error.service.js";
+import {enqueueTask,pauseTaskJob,resumeTaskJob} from "../jobs/job.service.js";
+
+const makeId=(prefix:string)=>`${prefix}_${crypto.randomUUID().replace(/-/g,"").slice(0,16)}`;
+const makeSlug=(value:string)=>value.toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,55)||`project-${Date.now()}`;
+
+export function createTask(name:string,prompt:string,mode:"autonomous"|"demo"="autonomous"){
+ if(mode==="autonomous"){
+  const provider=getAIProvider();
+  if(!provider.configured)throw new Error(`AI provider "${provider.name}" is not configured. Configure an AI provider before creating autonomous tasks.`);
+ }
+ const projectId=makeId("prj"),taskId=makeId("tsk"),created=now();
+ let slug=makeSlug(name);
+ if(db.prepare("SELECT id FROM projects WHERE slug=?").get(slug))slug=`${slug}-${Date.now()}`;
+ const workspace=path.join(ROOT,slug);
+ db.exec("BEGIN IMMEDIATE");
+ try{
+  db.prepare("INSERT INTO projects(id,name,slug,status,phase,progress,workspace,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)").run(projectId,name,slug,"queued","queued",0,workspace,created,created);
+  db.prepare("INSERT INTO tasks(id,project_id,title,prompt,status,phase,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)").run(taskId,projectId,name,prompt,"queued","queued",created,created);
+  db.prepare("INSERT INTO project_memory(project_id,type,content,created_at) VALUES(?,?,?,?)").run(projectId,"execution_mode",mode,created);
+  db.exec("COMMIT");
+ }catch(error){
+  db.exec("ROLLBACK");
+  throw error;
+ }
+ event("task.created",name,{taskId,projectId,data:{prompt,mode}});
+ const job=enqueueTask(taskId);
+ return{projectId,taskId,jobId:job.id,status:"queued",mode};
+}
+
+function executionMode(projectId:string){
+ const row=db.prepare("SELECT content FROM project_memory WHERE project_id=? AND type='execution_mode' ORDER BY id DESC LIMIT 1").get(projectId) as any;
+ return row?.content==="demo"?"demo":"autonomous";
+}
+
+async function executeDemoTask(task:any,project:any){
+ setPhase(task.id,project.id,"planning",10);
+ const plan=await createPlan(task,project);
+ db.prepare("UPDATE projects SET summary=?,updated_at=? WHERE id=?").run(plan.summary||null,now(),project.id);
+ memory(project.id,"plan",JSON.stringify({summary:plan.summary,architecture:plan.architecture||[]}));
+ event("plan.created",plan.summary||"Development plan created",{taskId:task.id,projectId:project.id});
+ setPhase(task.id,project.id,"coding",35);
+ event("agent.coding","Writing implementation",{taskId:task.id,projectId:project.id});
+ await applyPlan(plan,task,project);
+ setPhase(task.id,project.id,"testing",65);
+ event("agent.testing","Running project validation",{taskId:task.id,projectId:project.id});
+ let validation=await validatePlan(plan,task,project);
+ let repairAttempt=0;
+ while(!validation.success&&repairAttempt<MAX_REPAIR_ATTEMPTS){
+  repairAttempt++;
+  db.prepare("UPDATE tasks SET repair_attempts=?,phase='repairing',updated_at=? WHERE id=?").run(repairAttempt,now(),task.id);
+  setPhase(task.id,project.id,"repairing",Math.min(68+repairAttempt*6,85));
+  event("repair.started",`Autonomous repair ${repairAttempt}/${MAX_REPAIR_ATTEMPTS}`,{taskId:task.id,projectId:project.id,level:"warn",data:{failure:validation.failure}});
+  if(!AI_KEY)throw new Error(`Validation failed and AI repair requires OPENAI_API_KEY. ${validation.failure?.stderr||validation.failure?.stdout||""}`);
+  const repair=await repairPlan(task,project,validation.failure,repairAttempt);
+  memory(project.id,"repair",JSON.stringify({attempt:repairAttempt,analysis:repair.analysis}));
+  await applyPlan(repair,task,project);
+  setPhase(task.id,project.id,"retesting",80);
+  validation=await validatePlan(repair,task,project);
+ }
+ if(!validation.success)throw new Error(`Validation failed after ${repairAttempt} repair attempts.`);
+ memory(project.id,"validation",JSON.stringify(validation.results));
+ event("validation.passed","All project validation commands passed",{taskId:task.id,projectId:project.id});
+ await initializeGit(task,project);
+ const freshProject=db.prepare("SELECT * FROM projects WHERE id=?").get(project.id) as any;
+ const github=await publishToGitHub(task,freshProject);
+ setPhase(task.id,project.id,"finalizing",98);
+ return{summary:plan.summary,repairAttempts:repairAttempt,files:await walkFiles(project.workspace),validation:validation.results,github};
+}
+
+export async function executeTask(task:any){
+ const project=db.prepare("SELECT * FROM projects WHERE id=?").get(task.project_id) as any;
+ if(!project)throw new Error("Project not found.");
+ await mkdir(project.workspace,{recursive:true});
+ const mode=executionMode(project.id);
+ if(mode==="autonomous"){
+  const provider=getAIProvider();
+  if(!provider.configured)throw new AIProviderError(`AI provider "${provider.name}" is not configured.`,{provider:provider.name,retryable:true});
+ }
+ const started=now();
+ const isResume=task.phase==="resuming";
+ const startPhase=mode==="demo"?"planning":isResume?(project.phase&&project.phase!=="failed"?project.phase:"validation"):"architecture";
+ if(isResume){
+  db.prepare("UPDATE tasks SET status='running',phase=?,error=NULL,started_at=COALESCE(started_at,?),updated_at=? WHERE id=?").run(startPhase,started,started,task.id);
+  db.prepare("UPDATE projects SET status='active',phase=?,updated_at=? WHERE id=?").run(startPhase,started,project.id);
+  setWorker("busy",startPhase,task.id,project.id);
+  event("task.resuming",task.title,{taskId:task.id,projectId:project.id,data:{mode,attempts:task.attempts,repairAttempts:task.repair_attempts}});
+ }else{
+  db.prepare("UPDATE tasks SET status='running',phase=?,attempts=attempts+1,error=NULL,started_at=COALESCE(started_at,?),updated_at=? WHERE id=?").run(startPhase,started,started,task.id);
+  db.prepare("UPDATE projects SET status='active',phase=?,progress=?,updated_at=? WHERE id=?").run(startPhase,mode==="demo"?5:2,started,project.id);
+  setWorker("busy",startPhase,task.id,project.id);
+  event("task.started",task.title,{taskId:task.id,projectId:project.id,data:{mode}});
+ }
+ let result:Awaited<ReturnType<typeof executeDemoTask>>|Awaited<ReturnType<typeof executeAutonomousPipeline>>;
+ let summary:string|null;
+ if(mode==="demo"){
+  const demoResult=await executeDemoTask(task,project);
+  result=demoResult;
+  summary=demoResult.summary||null;
+ }else{
+  const autonomousResult=await executeAutonomousPipeline(task,project);
+  result=autonomousResult;
+  summary=autonomousResult.implementation||autonomousResult.plan||autonomousResult.architecture||null;
+ }
+ const completed=now();
+ db.prepare("UPDATE tasks SET status='completed',phase='completed',result=?,error=NULL,completed_at=?,updated_at=? WHERE id=?").run(JSON.stringify(result),completed,completed,task.id);
+ db.prepare("UPDATE projects SET status='completed',phase='completed',progress=100,summary=?,completed_at=?,updated_at=? WHERE id=?").run(summary||null,completed,completed,project.id);
+ memory(project.id,"task_result",JSON.stringify(result));
+ event("task.completed",`${task.title} completed`,{taskId:task.id,projectId:project.id,data:{mode}});
+ event("project.completed",`${project.name} completed successfully`,{taskId:task.id,projectId:project.id});
+}
+
+export function pauseTaskForAI(task:any,error:unknown){
+ const message=error instanceof Error?error.message:String(error);
+ const time=now();
+ db.prepare("UPDATE tasks SET status='paused',phase='waiting_ai',error=?,updated_at=? WHERE id=?").run(message,time,task.id);
+ db.prepare("UPDATE projects SET status='paused',phase='waiting_ai',updated_at=? WHERE id=?").run(time,task.project_id);
+ memory(task.project_id,"pause",JSON.stringify({reason:"ai_unavailable",message,time}));
+ event("task.paused",`Task paused while waiting for AI provider: ${message}`,{taskId:task.id,projectId:task.project_id,level:"warn",data:{reason:"ai_unavailable"}});
+ pauseTaskJob(task.id,message);
+ setWorker("online","idle");
+}
+
+export function resumeTask(taskId:string,reason="manual"){
+ const task=db.prepare("SELECT * FROM tasks WHERE id=?").get(taskId) as any;
+ if(!task)throw new Error("Task not found.");
+ if(task.status==="completed")throw new Error("Completed tasks cannot be resumed.");
+ if(task.status==="running")throw new Error("Running tasks cannot be resumed.");
+ const time=now();
+ db.prepare("UPDATE tasks SET status='queued',phase='resuming',error=NULL,updated_at=? WHERE id=?").run(time,task.id);
+ db.prepare("UPDATE projects SET status='queued',phase='resuming',updated_at=? WHERE id=?").run(time,task.project_id);
+ event("task.resumed",`Task queued for checkpoint resume`,{taskId:task.id,projectId:task.project_id,data:{reason}});
+ const job=resumeTaskJob(task.id);
+ return{id:task.id,projectId:task.project_id,jobId:job.id,status:"queued",phase:"resuming"};
+}
+
+export async function failTask(task:any,error:unknown){
+ if(error instanceof AIProviderError&&error.retryable){
+  pauseTaskForAI(task,error);
+  return;
+ }
+ const message=error instanceof Error?error.message:String(error);
+ const current=db.prepare("SELECT * FROM tasks WHERE id=?").get(task.id) as any;
+ const retry=current.attempts<current.max_attempts&&!isPermanentAIError(error);
+ db.prepare("UPDATE tasks SET status=?,phase=?,error=?,updated_at=? WHERE id=?").run(retry?"queued":"failed",retry?"retrying":"failed",message,now(),task.id);
+ if(retry){
+  event("task.retry",`Task scheduled for retry: ${message}`,{taskId:task.id,projectId:task.project_id,level:"warn",data:{attempt:current.attempts,max:current.max_attempts}});
+ }else{
+  db.prepare("UPDATE projects SET status='failed',phase='failed',updated_at=? WHERE id=?").run(now(),task.project_id);
+  memory(task.project_id,"failure",message);
+  event("task.failed",message,{taskId:task.id,projectId:task.project_id,level:"error"});
+ }
+}
+
+
+
+
+============================================================
+FILE: src\goals\autonomous-project.service.ts
+============================================================
+import crypto from "node:crypto";
+import {db} from "../database/database.js";
+import {now} from "../config/config.js";
+import {intakeProjectRequest,persistProjectIntake,type AIProjectIntakeResult} from "./project-intake.service.js";
+import {decomposeGoalWithAI} from "./goal-decomposition.service.js";
+import {createGoalTaskGraph} from "./goal-task-graph.service.js";
+import {deleteGoalTaskGraph} from "./goal-task-graph.repository.js";
+import {dispatchRunnableGoalWork} from "./goal-work-dispatch.service.js";
+import {deleteGoalWorkDispatches} from "./goal-work-dispatch.repository.js";
+import {deleteProjectGoal} from "./goal.repository.js";
+import type {ProposedGoalTaskGraph} from "./goal-task-graph.types.js";
+
+export interface AutonomousProjectBootstrapInput{
+ name:string;
+ request:string;
+ workspace?:string;
+ sourceTaskId?:string;
+}
+export interface AutonomousProjectBootstrapResult{
+ projectId:string;
+ goalId:string;
+ graphItems:number;
+ initialDispatches:number;
+ taskIds:string[];
+ jobIds:string[];
+ clarificationNeeded:boolean;
+ status:"waiting_clarification"|"queued";
+}
+export interface DeterministicBootstrapInput extends AutonomousProjectBootstrapInput{
+ analysis:AIProjectIntakeResult;
+ graph?:ProposedGoalTaskGraph;
+}
+
+const clean=(value:unknown)=>String(value??"").replace(/\s+/g," ").trim();
+const slug=(value:string)=>clean(value).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,80)||"project";
+const projectId=()=>`prj_${crypto.randomBytes(8).toString("hex")}`;
+
+function createProject(name:string,workspace?:string){
+ const id=projectId();
+ const time=now();
+ const normalizedName=clean(name);
+ if(!normalizedName)throw new Error("Project name is required.");
+ const projectSlug=`${slug(normalizedName)}-${Date.now()}`;
+ const path=clean(workspace)||`workspaces/${projectSlug}`;
+ db.prepare(`
+  INSERT INTO projects(
+   id,name,slug,status,phase,progress,workspace,created_at,updated_at
+  ) VALUES(?,?,?,?,?,?,?,?,?)
+ `).run(id,normalizedName,projectSlug,"queued","goal_intake",0,path,time,time);
+ return{id,name:normalizedName,slug:projectSlug,workspace:path};
+}
+
+function removeProject(projectId:string){
+ db.prepare("DELETE FROM projects WHERE id=?").run(projectId);
+}
+
+function cleanupBootstrap(projectId:string,goalId?:string){
+ if(goalId){
+  const dispatches=db.prepare(
+   "SELECT task_id FROM goal_work_dispatches WHERE goal_id=?"
+  ).all(goalId) as any[];
+  for(const dispatch of dispatches){
+   db.prepare("DELETE FROM jobs WHERE task_id=?").run(dispatch.task_id);
+   db.prepare("DELETE FROM tasks WHERE id=?").run(dispatch.task_id);
+  }
+  deleteGoalWorkDispatches(goalId);
+  deleteGoalTaskGraph(goalId);
+  deleteProjectGoal(goalId);
+ }
+ removeProject(projectId);
+}
+
+function finalizeBootstrap(project:any,goal:any,graph:ProposedGoalTaskGraph){
+ createGoalTaskGraph(goal.id,graph);
+ const dispatches=dispatchRunnableGoalWork(goal.id);
+ const time=now();
+ db.prepare(`
+  UPDATE projects
+  SET status='queued',phase='autonomous',progress=0,updated_at=?
+  WHERE id=?
+ `).run(time,project.id);
+ return{
+  projectId:project.id,
+  goalId:goal.id,
+  graphItems:graph.items.length,
+  initialDispatches:dispatches.length,
+  taskIds:dispatches.map(item=>item.taskId),
+  jobIds:dispatches.map(item=>item.jobId).filter(Boolean) as string[],
+  clarificationNeeded:false,
+  status:"queued" as const
+ };
+}
+
+export async function bootstrapAutonomousProject(
+ input:AutonomousProjectBootstrapInput
+):Promise<AutonomousProjectBootstrapResult>{
+ const name=clean(input.name);
+ const request=clean(input.request);
+ if(!name)throw new Error("Project name is required.");
+ if(!request)throw new Error("Project request is required.");
+
+ const project=createProject(name,input.workspace);
+ let goalId:string|undefined;
+
+ try{
+  const intake=await intakeProjectRequest({
+   projectId:project.id,
+   request,
+   sourceTaskId:input.sourceTaskId
+  });
+  goalId=intake.goal.id;
+
+  if(intake.analysis.clarificationNeeded){
+   db.prepare(`
+    UPDATE projects
+    SET status='paused',phase='waiting_clarification',updated_at=?
+    WHERE id=?
+   `).run(now(),project.id);
+   return{
+    projectId:project.id,
+    goalId:intake.goal.id,
+    graphItems:0,
+    initialDispatches:0,
+    taskIds:[],
+    jobIds:[],
+    clarificationNeeded:true,
+    status:"waiting_clarification"
+   };
+  }
+
+  const graph=await decomposeGoalWithAI(intake.goal.id);
+  return finalizeBootstrap(project,intake.goal,graph);
+ }catch(error){
+  cleanupBootstrap(project.id,goalId);
+  throw error;
+ }
+}
+
+export function bootstrapAutonomousProjectDeterministic(
+ input:DeterministicBootstrapInput
+):AutonomousProjectBootstrapResult{
+ const name=clean(input.name);
+ const request=clean(input.request);
+ if(!name)throw new Error("Project name is required.");
+ if(!request)throw new Error("Project request is required.");
+
+ const project=createProject(name,input.workspace);
+ let goalId:string|undefined;
+
+ try{
+  const intake=persistProjectIntake(
+   {
+    projectId:project.id,
+    request,
+    sourceTaskId:input.sourceTaskId
+   },
+   input.analysis
+  );
+  goalId=intake.goal.id;
+
+  if(intake.analysis.clarificationNeeded){
+   db.prepare(`
+    UPDATE projects
+    SET status='paused',phase='waiting_clarification',updated_at=?
+    WHERE id=?
+   `).run(now(),project.id);
+   return{
+    projectId:project.id,
+    goalId:intake.goal.id,
+    graphItems:0,
+    initialDispatches:0,
+    taskIds:[],
+    jobIds:[],
+    clarificationNeeded:true,
+    status:"waiting_clarification"
+   };
+  }
+
+  if(!input.graph)throw new Error("Task graph is required for deterministic bootstrap.");
+  return finalizeBootstrap(project,intake.goal,input.graph);
+ }catch(error){
+  cleanupBootstrap(project.id,goalId);
+  throw error;
+ }
+}
+
+============================================================
+FILE: src\development\development-continuation.service.ts
+============================================================
+import{db}from"../database/database.js";
+import{synchronizeGoalExecution}from"../team/goal-team-execution.service.js";
+import{beginDevelopmentContinuation,synchronizeDevelopmentCycle}from"./development-cycle.service.js";
+import{evaluateDevelopmentContinuation}from"./continuation-evaluator.service.js";
+import{expandGoalWorkGraph}from"./goal-expansion.service.js";
+import type{ContinuationWorkProposal}from"./goal-expansion.types.js";
+
+export function applyDevelopmentContinuation(
+ sessionId:string,
+ proposals:ContinuationWorkProposal[],
+ reason="Additional work required to satisfy the project goal."
+){
+ const session=db.prepare(`
+  SELECT id,project_id,goal_id,status
+  FROM development_sessions WHERE id=?
+ `).get(sessionId) as any;
+ if(!session)throw new Error(`Development session not found: ${sessionId}`);
+ if(!["active","paused"].includes(String(session.status)))
+  throw new Error(`Development session ${sessionId} is not continuable from ${session.status}.`);
+ const before=evaluateDevelopmentContinuation(sessionId);
+ if(before.decision==="complete")
+  throw new Error("Development goal is already satisfied; continuation is not allowed.");
+ const expansion=expandGoalWorkGraph(String(session.goal_id),proposals);
+ const execution=synchronizeGoalExecution(String(session.goal_id));
+ const cycle=beginDevelopmentContinuation(sessionId,reason);
+ const synchronized=synchronizeDevelopmentCycle(sessionId);
+ const after=evaluateDevelopmentContinuation(sessionId);
+ return{before,expansion,execution,cycle,synchronized,after};
+}
+
+============================================================
+FILE: src\development\autonomous-replanner.service.ts
+============================================================
+import{db}from"../database/database.js";
+import{getAIProvider}from"../agent/provider.service.js";
+import type{AIProvider}from"../agent/providers/provider.types.js";
+import{getProjectGoal}from"../goals/goal.repository.js";
+import{loadGoalTaskGraph}from"../goals/goal-task-graph.service.js";
+import{repositoryIntelligence}from"../intelligence/repository-intelligence.service.js";
+import{evaluateDevelopmentContinuation}from"./continuation-evaluator.service.js";
+import{applyDevelopmentContinuation}from"./development-continuation.service.js";
+import type{ContinuationWorkKind,ContinuationWorkProposal}from"./goal-expansion.types.js";
+import type{AIContinuationPlan,AutonomousReplanResult,ReplanProviderOptions}from"./autonomous-replanner.types.js";
+
+const kinds=new Set<ContinuationWorkKind>([
+ "architecture","analysis","implementation","integration","test","documentation","delivery","other"
+]);
+const clean=(value:any)=>String(value??"").trim();
+const strings=(value:any)=>Array.isArray(value)?[...new Set(value.map(clean).filter(Boolean))]:[];
+const priority=(value:any)=>{
+ const n=Number(value);
+ return Number.isFinite(n)?Math.max(0,Math.min(100,Math.round(n))):50;
+};
+
+export function normalizeAIContinuationPlan(raw:any):AIContinuationPlan{
+ const source=Array.isArray(raw?.work)?raw.work:[];
+ const used=new Set<string>();
+ const work:ContinuationWorkProposal[]=[];
+ for(const item of source){
+  const key=clean(item?.key).toLowerCase()
+   .replace(/[^a-z0-9_-]+/g,"-")
+   .replace(/^-+|-+$/g,"")
+   .slice(0,80);
+  if(!key||used.has(key))continue;
+  used.add(key);
+  const kind=clean(item?.kind) as ContinuationWorkKind;
+  work.push({
+   key,
+   title:clean(item?.title)||key,
+   description:clean(item?.description)||clean(item?.title)||key,
+   kind:kinds.has(kind)?kind:"other",
+   priority:priority(item?.priority),
+   dependencies:strings(item?.dependencies),
+   requirementIds:strings(item?.requirementIds),
+   acceptanceIds:strings(item?.acceptanceIds)
+  });
+ }
+ return{
+  reason:clean(raw?.reason)||"Additional work is required to satisfy the project goal.",
+  work
+ };
+}
+
+export function validateAIContinuationPlan(plan:AIContinuationPlan){
+ const problems:string[]=[];
+ if(!plan.work.length)problems.push("AI continuation plan contains no work.");
+ if(plan.work.length>20)problems.push("AI continuation plan exceeds the 20-item safety limit.");
+ for(const item of plan.work){
+  if(!item.key)problems.push("Continuation work key is required.");
+  if(!item.title)problems.push(`Continuation work "${item.key}" requires a title.`);
+  if(!item.description)problems.push(`Continuation work "${item.key}" requires a description.`);
+  if(!kinds.has(item.kind))problems.push(`Continuation work "${item.key}" has invalid kind "${item.kind}".`);
+ }
+ return{valid:problems.length===0,problems};
+}
+
+function sessionRow(sessionId:string){
+ return db.prepare(`
+  SELECT id,project_id,goal_id,status
+  FROM development_sessions WHERE id=?
+ `).get(sessionId) as any;
+}
+
+function projectRow(projectId:string){
+ return db.prepare(`
+  SELECT id,name,slug,status,phase,progress,workspace,summary
+  FROM projects WHERE id=?
+ `).get(projectId) as any;
+}
+
+export async function proposeDevelopmentContinuation(
+ sessionId:string,
+ options:ReplanProviderOptions={}
+):Promise<AIContinuationPlan>{
+ const session=sessionRow(sessionId);
+ if(!session)throw new Error(`Development session not found: ${sessionId}`);
+ if(!["active","paused"].includes(String(session.status)))
+  throw new Error(`Development session ${sessionId} cannot be replanned from ${session.status}.`);
+
+ const goal=getProjectGoal(String(session.goal_id));
+ if(!goal)throw new Error(`Goal not found: ${session.goal_id}`);
+ const project=projectRow(String(session.project_id));
+ if(!project)throw new Error(`Project not found: ${session.project_id}`);
+
+ const evaluation=evaluateDevelopmentContinuation(sessionId);
+ if(evaluation.decision==="complete")
+  throw new Error("Development goal is already satisfied; AI replanning is not required.");
+ if(evaluation.decision==="repair")
+  throw new Error("Development currently requires repair, not graph expansion.");
+
+ const graph=loadGoalTaskGraph(goal.id);
+ const provider:AIProvider=options.provider??getAIProvider();
+ if(!provider.configured)throw new Error("AI provider is not configured.");
+
+ let intelligence:any=null;
+ try{
+  intelligence=await repositoryIntelligence(
+   String(project.workspace),
+   [
+    goal.title,
+    goal.objective,
+    ...goal.requirements.map(item=>item.text),
+    ...goal.acceptanceCriteria.map(item=>item.text),
+    "continuation missing requirements acceptance remaining work"
+   ].join(" "),
+   30000
+  );
+ }catch{
+  intelligence=null;
+ }
+
+ const system=`You are Veylith's autonomous development replanner.
+You inspect an existing long-running software-development goal after one development cycle and propose ONLY the additional work still required.
+
+Return ONLY valid JSON:
+{
+ "reason":"why another development cycle is required",
+ "work":[
+  {
+   "key":"unique-stable-key",
+   "title":"short engineering task title",
+   "description":"precise engineering outcome",
+   "kind":"architecture|analysis|implementation|integration|test|documentation|delivery|other",
+   "priority":50,
+   "dependencies":["existing-or-proposed-work-key"],
+   "requirementIds":["existing-goal-requirement-id"],
+   "acceptanceIds":["existing-goal-acceptance-id"]
+  }
+ ]
+}
+
+Rules:
+- Propose only NEW work that does not already exist in the graph.
+- Do not rewrite, delete or duplicate existing work.
+- Use only requirement IDs and acceptance IDs supplied in the goal.
+- Dependencies must reference existing work keys or work keys proposed in this response.
+- Never create dependency cycles.
+- Prefer the smallest sufficient continuation.
+- Every uncovered required requirement must be covered by proposed work when additional implementation is necessary.
+- Every uncovered acceptance criterion must be covered by proposed validation/review work when necessary.
+- Completed work may be used as a dependency.
+- Failed work is handled by Veylith's repair system; do not duplicate failed work as continuation.
+- Do not generate source code.
+- Do not run commands.
+- Do not use Git.
+- Maximum 20 proposed work items.`;
+
+ const prompt=`PROJECT:
+${JSON.stringify(project,null,2)}
+
+PROJECT GOAL:
+${JSON.stringify({
+ id:goal.id,
+ title:goal.title,
+ objective:goal.objective,
+ requirements:goal.requirements,
+ acceptanceCriteria:goal.acceptanceCriteria,
+ constraints:goal.constraints
+},null,2)}
+
+CURRENT DEVELOPMENT GRAPH:
+${JSON.stringify(graph.items.map(item=>({
+ key:item.key,
+ title:item.title,
+ description:item.description,
+ kind:item.kind,
+ status:item.status,
+ priority:item.priority,
+ dependencies:item.dependencies,
+ requirementIds:item.requirementIds,
+ acceptanceIds:item.acceptanceCriterionIds
+})),null,2)}
+
+CONTINUATION EVALUATION:
+${JSON.stringify(evaluation,null,2)}
+
+REPOSITORY CONTEXT:
+${intelligence?.prompt??"Repository intelligence unavailable for this planning attempt."}
+
+Propose the minimum safe follow-up work required for the next development cycle.`;
+
+ const raw=await provider.json<any>(
+  system,
+  prompt,
+  options.taskId??`continuation_replan_${sessionId}_${Date.now()}`,
+  String(session.project_id)
+ );
+ const plan=normalizeAIContinuationPlan(raw);
+ const validation=validateAIContinuationPlan(plan);
+ if(!validation.valid)
+  throw new Error(`Invalid AI continuation plan: ${validation.problems.join("; ")}`);
+ return plan;
+}
+
+export async function autonomouslyContinueDevelopment(
+ sessionId:string,
+ options:ReplanProviderOptions={}
+):Promise<AutonomousReplanResult>{
+ const evaluation=evaluateDevelopmentContinuation(sessionId);
+ if(evaluation.decision==="complete")
+  return{evaluation,plan:null,applied:false,continuation:null};
+ if(evaluation.decision==="repair")
+  return{evaluation,plan:null,applied:false,continuation:null};
+
+ const plan=await proposeDevelopmentContinuation(sessionId,options);
+ const continuation=applyDevelopmentContinuation(sessionId,plan.work,plan.reason);
+ return{evaluation,plan,applied:true,continuation};
+}
+
+
+
+============================================================
+FILE: src\delivery\delivery-readiness.types.ts
+============================================================
+export type DeliveryReadinessStatus="ready"|"blocked";
+export type DeliveryReadinessCheckStatus="passed"|"failed";
+export type DeliveryReadinessCheckKey=
+ "goal_complete"|
+ "work_complete"|
+ "validation_passed"|
+ "review_approved"|
+ "repository_available"|
+ "unresolved_failures"|
+ "unresolved_escalations";
+export interface DeliveryReadinessCheck{
+ key:DeliveryReadinessCheckKey;
+ status:DeliveryReadinessCheckStatus;
+ summary:string;
+ evidence:string[];
+}
+export interface DeliveryReadinessInput{
+ projectId:string;
+ taskId:string|null;
+ goalId:string|null;
+ workspace:string;
+ goalComplete:boolean;
+ totalWork:number;
+ completedWork:number;
+ validationPassed:boolean;
+ reviewApproved:boolean;
+ repositoryAvailable:boolean;
+ unresolvedFailures:number;
+ unresolvedEscalations:number;
+ evidence?:string[];
+ metadata?:Record<string,unknown>;
+}
+export interface DeliveryReadinessAssessment{
+ id:string;
+ projectId:string;
+ taskId:string|null;
+ goalId:string|null;
+ workspace:string;
+ status:DeliveryReadinessStatus;
+ ready:boolean;
+ checks:DeliveryReadinessCheck[];
+ blockers:string[];
+ evidence:string[];
+ metadata:Record<string,unknown>;
+ createdAt:string;
+ updatedAt:string;
+}
+
+============================================================
+FILE: src\delivery\delivery-plan.types.ts
+============================================================
+export type DeliveryPlanStatus="planned"|"cancelled"|"delivered";
+export type DeliveryStage=
+ "prepare"|
+ "commit"|
+ "repository"|
+ "push"|
+ "verify";
+export interface DeliveryPlanStage{
+ key:DeliveryStage;
+ sequence:number;
+ required:boolean;
+ description:string;
+}
+export interface DeliveryReleaseManifest{
+ projectId:string;
+ taskId:string|null;
+ goalId:string|null;
+ readinessId:string;
+ workspace:string;
+ repositoryFingerprint:string;
+ repositoryFiles:string[];
+ targetBranch:string;
+ repositoryName:string;
+ visibility:"private"|"public";
+ stages:DeliveryPlanStage[];
+ evidence:string[];
+ metadata:Record<string,unknown>;
+ generatedAt:string;
+}
+export interface DeliveryPlan{
+ id:string;
+ projectId:string;
+ taskId:string|null;
+ goalId:string|null;
+ readinessId:string;
+ status:DeliveryPlanStatus;
+ manifest:DeliveryReleaseManifest;
+ createdAt:string;
+ updatedAt:string;
+ deliveredAt:string|null;
+}
+export interface CreateDeliveryPlanInput{
+ projectId:string;
+ taskId:string|null;
+ goalId:string|null;
+ readinessId:string;
+ workspace:string;
+ repositoryName:string;
+ targetBranch?:string;
+ visibility?:"private"|"public";
+ evidence?:string[];
+ metadata?:Record<string,unknown>;
+}
+
+============================================================
+FILE: src\delivery\delivery-publication.types.ts
+============================================================
+export type DeliveryPublicationStatus="authorized"|"publishing"|"published"|"failed"|"invalidated";
+export interface DeliveryPublication{
+ id:string;
+ projectId:string;
+ taskId:string|null;
+ goalId:string|null;
+ deliveryPlanId:string;
+ commitPreparationId:string;
+ readinessId:string;
+ workspace:string;
+ repositoryName:string;
+ targetBranch:string;
+ visibility:"private"|"public";
+ commit:string;
+ repositoryFingerprint:string;
+ status:DeliveryPublicationStatus;
+ github:Record<string,unknown>|null;
+ error:string|null;
+ metadata:Record<string,unknown>;
+ createdAt:string;
+ updatedAt:string;
+ publishedAt:string|null;
+}
+export interface AuthorizeDeliveryPublicationInput{
+ deliveryPlanId:string;
+}
+export interface ExecuteDeliveryPublicationInput{
+ deliveryPlanId:string;
+ task:{
+  id:string;
+  title:string;
+  [key:string]:unknown;
+ };
+ project:{
+  id:string;
+  workspace:string;
+  slug:string;
+  [key:string]:unknown;
+ };
+}
+
+============================================================
+FILE: src\delivery\delivery-verification.types.ts
+============================================================
+export type DeliveryVerificationStatus="pending"|"verified"|"failed"|"recovering"|"blocked";
+export type DeliveryRecoveryAction="none"|"resume_publication"|"retry_publication"|"manual";
+export interface DeliveryVerification{
+ id:string;
+ projectId:string;
+ taskId:string|null;
+ goalId:string|null;
+ deliveryPlanId:string;
+ publicationId:string;
+ expectedCommit:string;
+ actualCommit:string|null;
+ repositoryName:string;
+ targetBranch:string;
+ status:DeliveryVerificationStatus;
+ verified:boolean;
+ recoveryAction:DeliveryRecoveryAction;
+ attempts:number;
+ error:string|null;
+ evidence:string[];
+ metadata:Record<string,unknown>;
+ createdAt:string;
+ updatedAt:string;
+ verifiedAt:string|null;
+}
+export interface VerifyDeliveryInput{
+ deliveryPlanId:string;
+ actualCommit:string|null;
+ remoteVerified:boolean;
+ evidence?:string[];
+ metadata?:Record<string,unknown>;
+}
+export interface RecoverDeliveryInput{
+ deliveryPlanId:string;
+ reason?:string;
+}
+
+============================================================
+FILE: src\delivery\delivery-readiness.service.ts
+============================================================
+import fs from"node:fs";
+import path from"node:path";
+import{memory}from"../database/database.js";
+import{event}from"../core/telemetry.js";
+import{createDeliveryReadiness,latestDeliveryReadiness}from"./delivery-readiness.repository.js";
+import type{DeliveryReadinessCheck,DeliveryReadinessInput}from"./delivery-readiness.types.js";
+
+function check(
+ key:DeliveryReadinessCheck["key"],
+ passed:boolean,
+ success:string,
+ failure:string,
+ evidence:string[]=[]
+):DeliveryReadinessCheck{
+ return{
+  key,
+  status:passed?"passed":"failed",
+  summary:passed?success:failure,
+  evidence
+ };
+}
+function repositoryExists(workspace:string){
+ try{
+  const resolved=path.resolve(workspace);
+  return fs.existsSync(resolved)&&fs.statSync(resolved).isDirectory();
+ }catch{
+  return false;
+ }
+}
+export function assessDeliveryReadiness(input:DeliveryReadinessInput){
+ if(!input.projectId.trim())throw new Error("Delivery readiness requires projectId.");
+ if(!input.workspace.trim())throw new Error("Delivery readiness requires workspace.");
+ if(input.totalWork<0||input.completedWork<0){
+  throw new Error("Delivery work counts cannot be negative.");
+ }
+ if(input.completedWork>input.totalWork){
+  throw new Error("Completed work cannot exceed total work.");
+ }
+ const workspaceAvailable=
+  input.repositoryAvailable&&repositoryExists(input.workspace);
+ const workComplete=
+  input.totalWork>0&&input.completedWork===input.totalWork;
+ const checks:DeliveryReadinessCheck[]=[
+  check(
+   "goal_complete",
+   input.goalComplete,
+   "Project goal is complete.",
+   "Project goal is not complete.",
+   input.goalId?[`goal:${input.goalId}`]:[]
+  ),
+  check(
+   "work_complete",
+   workComplete,
+   `All ${input.totalWork} goal work items are complete.`,
+   `${input.completedWork}/${input.totalWork} goal work items are complete.`
+  ),
+  check(
+   "validation_passed",
+   input.validationPassed,
+   "Latest required validation passed.",
+   "Required validation has not passed."
+  ),
+  check(
+   "review_approved",
+   input.reviewApproved,
+   "Latest required review is approved.",
+   "Required review has not been approved."
+  ),
+  check(
+   "repository_available",
+   workspaceAvailable,
+   "Repository workspace is available.",
+   "Repository workspace is unavailable."
+  ),
+  check(
+   "unresolved_failures",
+   input.unresolvedFailures===0,
+   "No unresolved historical failures remain.",
+   `${input.unresolvedFailures} unresolved failure${input.unresolvedFailures===1?"":"s"} remain.`
+  ),
+  check(
+   "unresolved_escalations",
+   input.unresolvedEscalations===0,
+   "No unresolved validation escalations remain.",
+   `${input.unresolvedEscalations} unresolved escalation${input.unresolvedEscalations===1?"":"s"} remain.`
+  )
+ ];
+ const blockers=checks
+  .filter(item=>item.status==="failed")
+  .map(item=>item.summary);
+ const ready=blockers.length===0;
+ const assessment=createDeliveryReadiness({
+  projectId:input.projectId,
+  taskId:input.taskId,
+  goalId:input.goalId,
+  workspace:path.resolve(input.workspace),
+  status:ready?"ready":"blocked",
+  ready,
+  checks,
+  blockers,
+  evidence:[...(input.evidence||[])],
+  metadata:{...(input.metadata||{})}
+ });
+ memory(
+  input.projectId,
+  "delivery_readiness",
+  JSON.stringify({
+   assessmentId:assessment.id,
+   goalId:assessment.goalId,
+   taskId:assessment.taskId,
+   ready:assessment.ready,
+   blockers:assessment.blockers,
+   checks:assessment.checks.map(item=>({
+    key:item.key,
+    status:item.status
+   }))
+  })
+ );
+ event(
+  ready?"delivery.readiness_ready":"delivery.readiness_blocked",
+  ready
+   ?"Project passed autonomous delivery readiness."
+   :`Delivery blocked: ${blockers.join(" | ")}`,
+  {
+   taskId:input.taskId||undefined,
+   projectId:input.projectId,
+   level:ready?"info":"warn",
+   component:"delivery-readiness",
+   data:{
+    assessmentId:assessment.id,
+    goalId:input.goalId,
+    ready,
+    blockers
+   }
+  }
+ );
+ return assessment;
+}
+export function assertDeliveryReady(input:DeliveryReadinessInput){
+ const assessment=assessDeliveryReadiness(input);
+ if(!assessment.ready){
+  throw new Error(
+   `Project is not ready for autonomous delivery: ${assessment.blockers.join(" | ")}`
+  );
+ }
+ return assessment;
+}
+export function deliveryReadinessState(projectId:string){
+ return latestDeliveryReadiness(projectId);
+}
+
+============================================================
+FILE: src\delivery\delivery-plan.service.ts
+============================================================
+import path from"node:path";
+import{memory}from"../database/database.js";
+import{now,GITHUB_VISIBILITY}from"../config/config.js";
+import{event}from"../core/telemetry.js";
+import{getDeliveryReadiness}from"./delivery-readiness.repository.js";
+import{
+ createDeliveryPlanRecord,
+ findDeliveryPlanByReadiness,
+ getDeliveryPlan,
+ latestDeliveryPlan
+}from"./delivery-plan.repository.js";
+import{repositoryEvolutionState}from"../evolution/repository-evolution.service.js";
+import type{
+ CreateDeliveryPlanInput,
+ DeliveryPlanStage,
+ DeliveryReleaseManifest
+}from"./delivery-plan.types.js";
+
+const stages:DeliveryPlanStage[]=[
+ {
+  key:"prepare",
+  sequence:1,
+  required:true,
+  description:"Verify delivery intent and repository state."
+ },
+ {
+  key:"commit",
+  sequence:2,
+  required:true,
+  description:"Create or reuse the approved local Git commit."
+ },
+ {
+  key:"repository",
+  sequence:3,
+  required:true,
+  description:"Create or recover the target GitHub repository."
+ },
+ {
+  key:"push",
+  sequence:4,
+  required:true,
+  description:"Push the approved commit to the target branch."
+ },
+ {
+  key:"verify",
+  sequence:5,
+  required:true,
+  description:"Verify the published remote commit."
+ }
+];
+
+function cleanRepositoryName(value:string){
+ const name=value.trim();
+ if(!name)throw new Error("Delivery plan requires repositoryName.");
+ if(!/^[A-Za-z0-9._-]+$/.test(name)){
+  throw new Error("Repository name contains unsupported characters.");
+ }
+ return name;
+}
+function cleanBranch(value:string|undefined){
+ const branch=(value||"main").trim();
+ if(!branch)throw new Error("Delivery plan requires target branch.");
+ if(
+  branch.startsWith("-")||
+  branch.startsWith("/")||
+  branch.endsWith("/")||
+  branch.includes("..")||
+  branch.includes(" ")||
+  branch.includes("~")||
+  branch.includes("^")||
+  branch.includes(":")||
+  branch.includes("?")||
+  branch.includes("*")||
+  branch.includes("[")||
+  branch.includes("\\")
+ ){
+  throw new Error("Target branch is invalid.");
+ }
+ return branch;
+}
+export function createAutonomousDeliveryPlan(
+ input:CreateDeliveryPlanInput
+){
+ if(!input.projectId.trim()){
+  throw new Error("Delivery plan requires projectId.");
+ }
+ if(!input.readinessId.trim()){
+  throw new Error("Delivery plan requires readinessId.");
+ }
+ if(!input.workspace.trim()){
+  throw new Error("Delivery plan requires workspace.");
+ }
+ const readiness=getDeliveryReadiness(input.readinessId);
+ if(!readiness){
+  throw new Error(`Delivery readiness not found: ${input.readinessId}`);
+ }
+ if(readiness.projectId!==input.projectId){
+  throw new Error("Delivery readiness belongs to another project.");
+ }
+ if(!readiness.ready||readiness.status!=="ready"){
+  throw new Error("Blocked readiness cannot create a delivery plan.");
+ }
+ if(path.resolve(readiness.workspace)!==path.resolve(input.workspace)){
+  throw new Error("Delivery workspace does not match readiness workspace.");
+ }
+ if(
+  input.goalId&&
+  readiness.goalId&&
+  input.goalId!==readiness.goalId
+ ){
+  throw new Error("Delivery goal does not match readiness goal.");
+ }
+ if(
+  input.taskId&&
+  readiness.taskId&&
+  input.taskId!==readiness.taskId
+ ){
+  throw new Error("Delivery task does not match readiness task.");
+ }
+ const existing=findDeliveryPlanByReadiness(input.readinessId);
+ if(existing)return existing;
+ const evolution=repositoryEvolutionState(input.projectId);
+ const snapshot=evolution.latestSnapshot;
+ if(!snapshot){
+  throw new Error(
+   "Delivery planning requires a repository evolution snapshot."
+  );
+ }
+ if(path.resolve(snapshot.workspace)!==path.resolve(input.workspace)){
+  throw new Error(
+   "Repository evolution snapshot belongs to another workspace."
+  );
+ }
+ const repositoryName=cleanRepositoryName(input.repositoryName);
+ const targetBranch=cleanBranch(input.targetBranch);
+ const visibility=input.visibility||GITHUB_VISIBILITY;
+ const manifest:DeliveryReleaseManifest={
+  projectId:input.projectId,
+  taskId:input.taskId,
+  goalId:input.goalId,
+  readinessId:input.readinessId,
+  workspace:path.resolve(input.workspace),
+  repositoryFingerprint:snapshot.fingerprint,
+  repositoryFiles:[...snapshot.files].sort(),
+  targetBranch,
+  repositoryName,
+  visibility,
+  stages:stages.map(item=>({...item})),
+  evidence:[
+   `readiness:${readiness.id}`,
+   `repository:${snapshot.fingerprint}`,
+   ...(input.evidence||[])
+  ],
+  metadata:{
+   ...(input.metadata||{}),
+   snapshotId:snapshot.id,
+   snapshotSequence:snapshot.sequence
+  },
+  generatedAt:now()
+ };
+ const plan=createDeliveryPlanRecord({
+  projectId:input.projectId,
+  taskId:input.taskId,
+  goalId:input.goalId,
+  readinessId:input.readinessId,
+  manifest
+ });
+ memory(
+  input.projectId,
+  "delivery_plan",
+  JSON.stringify({
+   deliveryPlanId:plan.id,
+   readinessId:plan.readinessId,
+   repositoryFingerprint:manifest.repositoryFingerprint,
+   repositoryName:manifest.repositoryName,
+   targetBranch:manifest.targetBranch,
+   visibility:manifest.visibility,
+   stages:manifest.stages.map(item=>item.key)
+  })
+ );
+ event(
+  "delivery.plan_created",
+  `Autonomous delivery planned for ${repositoryName}.`,
+  {
+   taskId:input.taskId||undefined,
+   projectId:input.projectId,
+   component:"delivery-planning",
+   data:{
+    deliveryPlanId:plan.id,
+    readinessId:input.readinessId,
+    repositoryFingerprint:manifest.repositoryFingerprint,
+    targetBranch,
+    visibility
+   }
+  }
+ );
+ return plan;
+}
+export function autonomousDeliveryPlanState(projectId:string){
+ return latestDeliveryPlan(projectId);
+}
+export function assertDeliveryPlanRepositoryCurrent(planId:string){
+ const plan=getDeliveryPlan(planId);
+ if(!plan)throw new Error(`Delivery plan not found: ${planId}`);
+ const evolution=repositoryEvolutionState(plan.projectId);
+ const current=evolution.latestSnapshot;
+ if(!current){
+  throw new Error("Current repository evolution state is unavailable.");
+ }
+ if(current.fingerprint!==plan.manifest.repositoryFingerprint){
+  throw new Error(
+   "Repository changed after delivery planning; a new readiness assessment and delivery plan are required."
+  );
+ }
+ return{
+  current:true,
+  plan,
+  snapshot:current
+ };
+}
+
+============================================================
+FILE: src\delivery\delivery-publication.service.ts
+============================================================
+import path from"node:path";
+import{memory}from"../database/database.js";
+import{event}from"../core/telemetry.js";
+import{publishToGitHub}from"../git/git.service.js";
+import{getDeliveryPlan,setDeliveryPlanStatus}from"./delivery-plan.repository.js";
+import{
+ assertPreparedDeliveryCommitCurrent
+}from"./delivery-commit.service.js";
+import{
+ createDeliveryPublication,
+ findDeliveryPublicationByPlan,
+ latestDeliveryPublication,
+ updateDeliveryPublication
+}from"./delivery-publication.repository.js";
+import type{
+ AuthorizeDeliveryPublicationInput,
+ ExecuteDeliveryPublicationInput
+}from"./delivery-publication.types.js";
+
+export async function authorizeAutonomousPublication(
+ input:AuthorizeDeliveryPublicationInput
+){
+ const plan=getDeliveryPlan(input.deliveryPlanId);
+ if(!plan){
+  throw new Error(`Delivery plan not found: ${input.deliveryPlanId}`);
+ }
+ if(plan.status!=="planned"){
+  throw new Error(
+   `Delivery plan must be planned before publication; current status is ${plan.status}.`
+  );
+ }
+ const current=await assertPreparedDeliveryCommitCurrent(plan.id);
+ const preparation=current.preparation;
+ if(preparation.projectId!==plan.projectId){
+  throw new Error("Prepared commit belongs to another project.");
+ }
+ if(preparation.readinessId!==plan.readinessId){
+  throw new Error("Prepared commit readiness does not match delivery plan.");
+ }
+ if(
+  preparation.repositoryFingerprint!==
+  plan.manifest.repositoryFingerprint
+ ){
+  throw new Error("Prepared commit fingerprint does not match delivery plan.");
+ }
+ const existing=findDeliveryPublicationByPlan(plan.id);
+ if(existing){
+  if(existing.commit!==preparation.commit){
+   throw new Error(
+    "Existing publication authorization targets another commit."
+   );
+  }
+  if(existing.status==="invalidated"){
+   throw new Error("Publication authorization is invalidated.");
+  }
+  return existing;
+ }
+ const publication=createDeliveryPublication({
+  projectId:plan.projectId,
+  taskId:plan.taskId,
+  goalId:plan.goalId,
+  deliveryPlanId:plan.id,
+  commitPreparationId:preparation.id,
+  readinessId:plan.readinessId,
+  workspace:plan.manifest.workspace,
+  repositoryName:plan.manifest.repositoryName,
+  targetBranch:plan.manifest.targetBranch,
+  visibility:plan.manifest.visibility,
+  commit:preparation.commit,
+  repositoryFingerprint:plan.manifest.repositoryFingerprint,
+  metadata:{
+   authorizedHead:current.head,
+   releaseGeneratedAt:plan.manifest.generatedAt
+  }
+ });
+ memory(
+  plan.projectId,
+  "delivery_publication_authorized",
+  JSON.stringify({
+   publicationId:publication.id,
+   deliveryPlanId:plan.id,
+   commit:publication.commit,
+   repositoryName:publication.repositoryName,
+   targetBranch:publication.targetBranch
+  })
+ );
+ event(
+  "delivery.publication_authorized",
+  `Authorized GitHub publication of ${publication.commit}.`,
+  {
+   taskId:plan.taskId||undefined,
+   projectId:plan.projectId,
+   component:"delivery-publication",
+   data:{
+    publicationId:publication.id,
+    deliveryPlanId:plan.id,
+    commit:publication.commit,
+    repositoryName:publication.repositoryName,
+    targetBranch:publication.targetBranch
+   }
+  }
+ );
+ return publication;
+}
+
+export async function executeAutonomousPublication(
+ input:ExecuteDeliveryPublicationInput
+){
+ const plan=getDeliveryPlan(input.deliveryPlanId);
+ if(!plan){
+  throw new Error(`Delivery plan not found: ${input.deliveryPlanId}`);
+ }
+ if(plan.projectId!==input.project.id){
+  throw new Error("Delivery plan belongs to another project.");
+ }
+ if(
+  path.resolve(plan.manifest.workspace)!==
+  path.resolve(input.project.workspace)
+ ){
+  throw new Error("Publication workspace does not match delivery plan.");
+ }
+ if(input.project.slug!==plan.manifest.repositoryName){
+  throw new Error(
+   "Project repository slug does not match approved delivery repository."
+  );
+ }
+ const publication=await authorizeAutonomousPublication({
+  deliveryPlanId:plan.id
+ });
+ if(publication.status==="published"){
+  return publication;
+ }
+ if(publication.status==="publishing"){
+  throw new Error(
+   "Delivery publication is already marked as publishing and requires recovery."
+  );
+ }
+ const current=await assertPreparedDeliveryCommitCurrent(plan.id);
+ if(current.preparation.commit!==publication.commit){
+  updateDeliveryPublication(publication.id,{
+   status:"invalidated",
+   error:"Prepared commit changed after publication authorization."
+  });
+  throw new Error(
+   "Prepared commit changed after publication authorization."
+  );
+ }
+ updateDeliveryPublication(publication.id,{
+  status:"publishing",
+  error:null
+ });
+ try{
+  const github=await publishToGitHub(input.task,input.project);
+  if(!github){
+   const failed=updateDeliveryPublication(publication.id,{
+    status:"failed",
+    error:"GitHub publishing is not configured or returned no publication result."
+   });
+   throw new Error(failed.error!);
+  }
+  const published=updateDeliveryPublication(publication.id,{
+   status:"published",
+   github:github as Record<string,unknown>,
+   error:null,
+   metadata:{
+    publishedCommit:publication.commit
+   }
+  });
+  setDeliveryPlanStatus(plan.id,"delivered");
+  memory(
+   plan.projectId,
+   "delivery_publication",
+   JSON.stringify({
+    publicationId:published.id,
+    deliveryPlanId:plan.id,
+    commit:published.commit,
+    github:published.github
+   })
+  );
+  event(
+   "delivery.publication_completed",
+   `Autonomous GitHub publication completed for ${published.commit}.`,
+   {
+    taskId:plan.taskId||undefined,
+    projectId:plan.projectId,
+    component:"delivery-publication",
+    data:{
+     publicationId:published.id,
+     deliveryPlanId:plan.id,
+     commit:published.commit
+    }
+   }
+  );
+  return published;
+ }catch(error){
+  const currentState=findDeliveryPublicationByPlan(plan.id);
+  if(currentState?.status==="publishing"){
+   updateDeliveryPublication(publication.id,{
+    status:"failed",
+    error:error instanceof Error?error.message:String(error)
+   });
+  }
+  throw error;
+ }
+}
+
+export async function assertPublicationAuthorizationCurrent(
+ deliveryPlanId:string
+){
+ const publication=findDeliveryPublicationByPlan(deliveryPlanId);
+ if(!publication){
+  throw new Error(
+   `No publication authorization exists for plan: ${deliveryPlanId}`
+  );
+ }
+ if(
+  publication.status==="invalidated"||
+  publication.status==="failed"
+ ){
+  throw new Error(
+   `Publication authorization is ${publication.status}.`
+  );
+ }
+ const current=await assertPreparedDeliveryCommitCurrent(deliveryPlanId);
+ if(current.preparation.commit!==publication.commit){
+  updateDeliveryPublication(publication.id,{
+   status:"invalidated",
+   error:"Repository commit no longer matches publication authorization."
+  });
+  throw new Error(
+   "Repository commit no longer matches publication authorization."
+  );
+ }
+ return{
+  current:true,
+  publication,
+  preparation:current.preparation
+ };
+}
+
+export function autonomousPublicationState(projectId:string){
+ return latestDeliveryPublication(projectId);
+}
+
+============================================================
+FILE: src\delivery\delivery-verification.service.ts
+============================================================
+import{memory}from"../database/database.js";
+import{event}from"../core/telemetry.js";
+import{getPublicationRecoveryState}from"../git/git.service.js";
+import{getDeliveryPlan}from"./delivery-plan.repository.js";
+import{
+ findDeliveryPublicationByPlan,
+ updateDeliveryPublication
+}from"./delivery-publication.repository.js";
+import{
+ ensureDeliveryVerification,
+ findDeliveryVerificationByPlan,
+ latestDeliveryVerification,
+ updateDeliveryVerification
+}from"./delivery-verification.repository.js";
+import type{
+ RecoverDeliveryInput,
+ VerifyDeliveryInput
+}from"./delivery-verification.types.js";
+
+function normalizeCommit(value:string|null|undefined){
+ return value?.trim().toLowerCase()||null;
+}
+export function verifyAutonomousDelivery(input:VerifyDeliveryInput){
+ const plan=getDeliveryPlan(input.deliveryPlanId);
+ if(!plan){
+  throw new Error(`Delivery plan not found: ${input.deliveryPlanId}`);
+ }
+ const publication=findDeliveryPublicationByPlan(plan.id);
+ if(!publication){
+  throw new Error("Delivery publication does not exist.");
+ }
+ const verification=ensureDeliveryVerification({
+  projectId:plan.projectId,
+  taskId:plan.taskId,
+  goalId:plan.goalId,
+  deliveryPlanId:plan.id,
+  publicationId:publication.id,
+  expectedCommit:publication.commit,
+  repositoryName:publication.repositoryName,
+  targetBranch:publication.targetBranch
+ });
+ if(verification.verified){
+  if(
+   normalizeCommit(verification.actualCommit)!==
+   normalizeCommit(publication.commit)
+  ){
+   throw new Error("Persisted verified delivery contains a commit mismatch.");
+  }
+  return verification;
+ }
+ const expected=normalizeCommit(publication.commit);
+ const actual=normalizeCommit(input.actualCommit);
+ const evidence=[
+  ...(input.evidence||[]),
+  `expected:${publication.commit}`,
+  `actual:${input.actualCommit||"unavailable"}`,
+  `remoteVerified:${input.remoteVerified}`
+ ];
+ if(!input.remoteVerified){
+  const failed=updateDeliveryVerification(verification.id,{
+   actualCommit:input.actualCommit,
+   status:"failed",
+   verified:false,
+   recoveryAction:"resume_publication",
+   incrementAttempts:true,
+   error:"Remote publication has not been verified.",
+   evidence,
+   metadata:input.metadata
+  });
+  event(
+   "delivery.verification_failed",
+   "Remote publication has not been verified.",
+   {
+    taskId:plan.taskId||undefined,
+    projectId:plan.projectId,
+    component:"delivery-verification",
+    level:"warn",
+    data:{
+     deliveryPlanId:plan.id,
+     publicationId:publication.id,
+     expectedCommit:publication.commit,
+     actualCommit:input.actualCommit
+    }
+   }
+  );
+  return failed;
+ }
+ if(!actual||actual!==expected){
+  const failed=updateDeliveryVerification(verification.id,{
+   actualCommit:input.actualCommit,
+   status:"blocked",
+   verified:false,
+   recoveryAction:"manual",
+   incrementAttempts:true,
+   error:"Verified remote commit does not match the approved delivery commit.",
+   evidence,
+   metadata:input.metadata
+  });
+  event(
+   "delivery.verification_mismatch",
+   "Remote commit does not match approved delivery commit.",
+   {
+    taskId:plan.taskId||undefined,
+    projectId:plan.projectId,
+    component:"delivery-verification",
+    level:"error",
+    data:{
+     deliveryPlanId:plan.id,
+     expectedCommit:publication.commit,
+     actualCommit:input.actualCommit
+    }
+   }
+  );
+  return failed;
+ }
+ const verified=updateDeliveryVerification(verification.id,{
+  actualCommit:input.actualCommit,
+  status:"verified",
+  verified:true,
+  recoveryAction:"none",
+  incrementAttempts:true,
+  error:null,
+  evidence,
+  metadata:input.metadata
+ });
+ if(publication.status!=="published"){
+  updateDeliveryPublication(publication.id,{
+   status:"published",
+   error:null,
+   metadata:{
+    verifiedCommit:publication.commit,
+    verificationId:verified.id
+   }
+  });
+ }
+ memory(
+  plan.projectId,
+  "delivery_verified",
+  JSON.stringify({
+   verificationId:verified.id,
+   publicationId:publication.id,
+   deliveryPlanId:plan.id,
+   commit:verified.actualCommit,
+   repositoryName:verified.repositoryName,
+   targetBranch:verified.targetBranch
+  })
+ );
+ event(
+  "delivery.verified",
+  `Verified autonomous delivery ${verified.actualCommit}.`,
+  {
+   taskId:plan.taskId||undefined,
+   projectId:plan.projectId,
+   component:"delivery-verification",
+   data:{
+    verificationId:verified.id,
+    publicationId:publication.id,
+    deliveryPlanId:plan.id,
+    commit:verified.actualCommit
+   }
+  }
+ );
+ return verified;
+}
+export function recoverAutonomousDelivery(input:RecoverDeliveryInput){
+ const plan=getDeliveryPlan(input.deliveryPlanId);
+ if(!plan){
+  throw new Error(`Delivery plan not found: ${input.deliveryPlanId}`);
+ }
+ const publication=findDeliveryPublicationByPlan(plan.id);
+ if(!publication){
+  throw new Error("Delivery publication does not exist.");
+ }
+ const verification=ensureDeliveryVerification({
+  projectId:plan.projectId,
+  taskId:plan.taskId,
+  goalId:plan.goalId,
+  deliveryPlanId:plan.id,
+  publicationId:publication.id,
+  expectedCommit:publication.commit,
+  repositoryName:publication.repositoryName,
+  targetBranch:publication.targetBranch
+ });
+ if(verification.verified){
+  return{
+   action:"none" as const,
+   verification,
+   publication,
+   git:getPublicationRecoveryState(plan.projectId)
+  };
+ }
+ if(verification.status==="blocked"){
+  return{
+   action:"manual" as const,
+   verification,
+   publication,
+   git:getPublicationRecoveryState(plan.projectId)
+  };
+ }
+ const git=getPublicationRecoveryState(plan.projectId);
+ let action:"resume_publication"|"retry_publication";
+ if(
+  publication.status==="publishing"||
+  git?.stage==="repository_ready"||
+  git?.stage==="pushed"
+ ){
+  action="resume_publication";
+ }else{
+  action="retry_publication";
+ }
+ const recovering=updateDeliveryVerification(verification.id,{
+  status:"recovering",
+  verified:false,
+  recoveryAction:action,
+  error:input.reason||verification.error,
+  metadata:{
+   recoveryRequested:true,
+   publicationStatus:publication.status,
+   gitStage:git?.stage||"none"
+  }
+ });
+ memory(
+  plan.projectId,
+  "delivery_recovery",
+  JSON.stringify({
+   verificationId:recovering.id,
+   publicationId:publication.id,
+   deliveryPlanId:plan.id,
+   action,
+   publicationStatus:publication.status,
+   gitStage:git?.stage||"none"
+  })
+ );
+ event(
+  "delivery.recovery_requested",
+  `Delivery recovery selected ${action}.`,
+  {
+   taskId:plan.taskId||undefined,
+   projectId:plan.projectId,
+   component:"delivery-verification",
+   level:"warn",
+   data:{
+    verificationId:recovering.id,
+    publicationId:publication.id,
+    deliveryPlanId:plan.id,
+    action,
+    gitStage:git?.stage||"none"
+   }
+  }
+ );
+ return{
+  action,
+  verification:recovering,
+  publication,
+  git
+ };
+}
+export function deliveryVerificationState(projectId:string){
+ return latestDeliveryVerification(projectId);
+}
+export function deliveryVerificationForPlan(deliveryPlanId:string){
+ return findDeliveryVerificationByPlan(deliveryPlanId);
+}

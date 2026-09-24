@@ -1,5 +1,5 @@
-﻿export type GoalWorkStatus="pending"|"ready"|"running"|"blocked"|"completed"|"failed"|"cancelled";
-export type GoalWorkKind="analysis"|"architecture"|"implementation"|"test"|"documentation"|"integration"|"delivery"|"other";
+export type GoalWorkStatus="pending"|"ready"|"running"|"blocked"|"completed"|"failed"|"cancelled";
+export type GoalWorkKind="analysis"|"architecture"|"implementation"|"test"|"review"|"documentation"|"integration"|"delivery"|"other";
 export interface GoalWorkItem{
  id:string;
  goalId:string;
@@ -41,3 +41,5 @@ export interface ProposedGoalWorkItem{
 export interface ProposedGoalTaskGraph{
  items:ProposedGoalWorkItem[];
 }
+
+

@@ -6,6 +6,7 @@ await mkdir(path.dirname(DB_PATH),{recursive:true});
 await mkdir(ROOT,{recursive:true});
 export const db=new DatabaseSync(DB_PATH);
 db.exec("PRAGMA journal_mode=WAL;");
+db.exec("PRAGMA busy_timeout=5000;");
 db.exec("PRAGMA foreign_keys=ON;");
 db.exec(`
 CREATE TABLE IF NOT EXISTS projects(
@@ -212,6 +213,7 @@ export function memory(projectId:string,type:string,content:unknown){
 export function projectMemory(projectId:string){
  return db.prepare("SELECT type,content,created_at FROM project_memory WHERE project_id=? ORDER BY id DESC LIMIT 30").all(projectId);
 }
+
 
 
 

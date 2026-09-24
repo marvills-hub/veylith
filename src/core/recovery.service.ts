@@ -1,4 +1,5 @@
-﻿import {db} from "../database/database.js";
+﻿import {recoverActiveDevelopmentSessions} from "../development/development-lifecycle.service.js";
+import {db} from "../database/database.js";
 import {
  AI_RECOVERY_INTERVAL_MS,
  now
@@ -20,6 +21,7 @@ let lastCheck=0;
 
 export function recoverInterruptedTasks(){
  const result=recoverJobs();
+ const developmentSessions=recoverActiveDevelopmentSessions();
  setWorker("online","idle");
  return result.local+result.expired+result.reconciled;
 }
@@ -151,5 +153,6 @@ export async function resumePausedAIJobs(){
   checking=false;
  }
 }
+
 
 

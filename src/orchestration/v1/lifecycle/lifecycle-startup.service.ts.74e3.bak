@@ -1,0 +1,49 @@
+import{recoverAutonomousLifecycles}from"./lifecycle-recovery.service.js";
+import{event}from"../../../core/telemetry.js";
+import{logger}from"../../../logging/logger.service.js";
+
+let startupRecoveryCompleted=false;
+let startupRecoveryRunning=false;
+
+export function autonomousLifecycleStartupRecovered(){
+ return startupRecoveryCompleted;
+}
+
+export async function recoverV1AutonomousStartup(){
+ if(startupRecoveryCompleted){
+  return{skipped:true,recovered:0};
+ }
+ if(startupRecoveryRunning){
+  return{skipped:true,recovered:0};
+ }
+ startupRecoveryRunning=true;
+ try{
+  const recovered=recoverAutonomousLifecycles();
+  startupRecoveryCompleted=true;
+  event(
+   "orchestrator.v1_startup_recovery_completed",
+   `Recovered ${recovered.length} autonomous lifecycle(s)`,
+   {
+    component:"v1-orchestration",
+    data:{recovered:recovered.length}
+   }
+  );
+  return{
+   skipped:false,
+   recovered:recovered.length
+  };
+ }catch(error){
+  logger.error(
+   "Veylith v1 autonomous startup recovery failed",
+   {
+    component:"v1-orchestration",
+    operation:"startup-recovery"
+   },
+   undefined,
+   error
+  );
+  throw error;
+ }finally{
+  startupRecoveryRunning=false;
+ }
+}

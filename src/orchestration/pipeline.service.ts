@@ -1,4 +1,4 @@
-import {writeProjectFile} from "../runtime/filesystem.service.js";
+﻿import {writeProjectFile} from "../runtime/filesystem.service.js";
 import {runCommand} from "../runtime/command.service.js";
 import {assertSafeGeneratedFiles} from "../security/generated-file-policy.service.js";
 import {securityAllowed,securityRejected} from "../security/security-telemetry.service.js";
@@ -6,10 +6,29 @@ import {analyzeRepository} from "../intelligence/repository-intelligence.service
 import {analyzeChange} from "../intelligence/change-analysis.service.js";
 import {assertChangeSetSafe} from "../intelligence/change-guard.service.js";
 import {event} from "../core/telemetry.js";
+import {provisionProjectDependencies} from "../dependencies/dependency-provisioning.service.js";
 import type {DevelopmentPlan,DevelopmentResult} from "./pipeline.types.js";
 
+function assertGeneratedContentIntegrity(files:DevelopmentResult["files"]){
+ for(const file of files){
+  const name=String(file.path||"").replace(/\\/g,"/").toLowerCase();
+  const content=String(file.content??"");
+  if(name.endsWith("package.json")){
+   let parsed:any;
+   try{
+    parsed=JSON.parse(content);
+   }catch(error){
+    throw new Error(`Generated package.json is invalid JSON: ${error instanceof Error?error.message:String(error)}`);
+   }
+   if(!parsed||typeof parsed!=="object"||Array.isArray(parsed)){
+    throw new Error("Generated package.json must contain a JSON object.");
+   }
+  }
+ }
+}
 export async function applyDevelopment(result:DevelopmentResult,task:any,project:any,plan?:DevelopmentPlan){
  if(!Array.isArray(result.files))throw new Error("Developer returned an invalid files collection.");
+ assertGeneratedContentIntegrity(result.files);
  for(const file of result.files){
   if(!file||typeof file.path!=="string"||typeof file.content!=="string")throw new Error("Developer returned an invalid file.");
  }
@@ -61,6 +80,19 @@ export async function applyDevelopment(result:DevelopmentResult,task:any,project
 export async function validateDevelopment(result:DevelopmentResult,task:any,project:any){
  if(!Array.isArray(result.commands)||!result.commands.length)throw new Error("Developer did not provide validation commands.");
  const results:any[]=[];
+ const provisioning=await provisionProjectDependencies(project.workspace,task.id,project.id);
+ if(!provisioning.success){
+  const record={
+   command:provisioning.command||"dependency-provisioning",
+   args:provisioning.args,
+   purpose:"Provision project dependencies",
+   code:provisioning.code??-1,
+   stdout:provisioning.stdout,
+   stderr:provisioning.stderr||provisioning.reason
+  };
+  results.push(record);
+  return{success:false,results,failure:record};
+ }
  for(const item of result.commands){
   if(!item||typeof item.command!=="string"||!Array.isArray(item.args)){
    const record={
@@ -99,3 +131,5 @@ export async function validateDevelopment(result:DevelopmentResult,task:any,proj
  }
  return{success:true,results,failure:null};
 }
+
+

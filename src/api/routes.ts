@@ -1,11 +1,11 @@
-﻿import express from "express";
+import express from "express";
 import {requestLogging} from "../logging/request-logging.middleware.js";
 import {queryLogs,logStats} from "../logging/log-query.service.js";
 import {logFiles,logStorageStatus} from "../logging/log-storage.service.js";
 import path from "node:path";
 import {readFile} from "node:fs/promises";
 import {db} from "../database/database.js";
-import {createTask,resumeTask} from "../core/task.service.js";
+import {createAutonomousProject,createTask,resumeTask} from "../core/task.service.js";
 import {walkFiles,safeTarget} from "../runtime/filesystem.service.js";
 import {addClient,removeClient} from "../core/telemetry.js";
 import {VERSION,GITHUB_ENABLED,GITHUB_OWNER,GITHUB_VISIBILITY,WORKER_ID,now} from "../config/config.js";
@@ -167,11 +167,11 @@ export function createApp(){
   req.on("close",()=>removeClient(res));
  });
 
- app.post("/api/tasks",(req,res)=>{
+ app.post("/api/tasks",async(req,res)=>{
   const prompt=String(req.body?.prompt||"").trim();
   const name=String(req.body?.name||"").trim()||`Veylith Project ${Date.now()}`;
   if(prompt.length<5){res.status(400).json({error:"Development request is required."});return}
-  try{res.status(201).json(createTask(name,prompt))}
+  try{res.status(201).json(await createAutonomousProject(name,prompt))}
   catch(error){res.status(500).json({error:error instanceof Error?error.message:String(error)})}
  });
 
@@ -242,6 +242,7 @@ export function createApp(){
  app.use((_req,res)=>res.sendFile(path.resolve("public/index.html")));
  return app;
 }
+
 
 
 

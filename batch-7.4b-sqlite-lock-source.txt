@@ -1,0 +1,1106 @@
+============================================================
+BATCH 7.4B - SQLITE LOCK SOURCE
+============================================================
+
+=== SERVER.TS ===
+import "dotenv/config";
+import {createApp} from "./api/routes.js";
+import {db} from "./database/database.js";
+import {workerLoop} from "./core/worker.service.js";
+import {recoverInterruptedTasks,resumePausedAIJobs} from "./core/recovery.service.js";
+import {collectMetrics} from "./monitoring/metrics.service.js";
+import {event,setWorker} from "./core/telemetry.js";
+import {
+ VERSION,
+ PORT,
+ POLL,
+ METRIC_INTERVAL,
+ WORKER_ID,
+ GITHUB_ENABLED,
+ GITHUB_OWNER,
+ ROOT,
+ DB_PATH
+} from "./config/config.js";
+import {aiProviderStatus} from "./agent/provider.service.js";
+import {initializeWorkerSlots} from "./workers/worker-slot.service.js";
+import {
+ registerRuntime,
+ startRuntimeHeartbeat,
+ setRuntimeStatus,
+ markRuntimeStopping,
+ markRuntimeStopped,
+ RUNTIME_ID
+} from "./runtime/runtime-instance.service.js";
+import {releaseRuntimeJobs} from "./jobs/job-recovery.service.js";
+import {cancelAllSandboxes} from "./sandbox/sandbox-manager.service.js";
+import {logger} from "./logging/logger.service.js";
+import {cleanupLogs,logStorageStatus} from "./logging/log-storage.service.js";
+import {recoverV1AutonomousStartup} from "./orchestration/v1/lifecycle/lifecycle-startup.service.js";
+
+registerRuntime();
+recoverInterruptedTasks();
+initializeWorkerSlots();
+await recoverV1AutonomousStartup();
+startRuntimeHeartbeat();
+
+try{cleanupLogs()}catch{}
+
+const app=createApp();
+const ai=aiProviderStatus();
+
+setWorker("online","booting");
+
+event(
+ "system.started",
+ `Veylith Core v${VERSION} started`,
+ {
+  component:"system",
+  data:{
+   pid:process.pid,
+   runtimeId:RUNTIME_ID,
+   worker:WORKER_ID,
+   aiConfigured:ai.configured,
+   aiProvider:ai.provider,
+   aiModel:ai.model,
+   githubConfigured:GITHUB_ENABLED,
+   logging:logStorageStatus()
+  }
+ }
+);
+
+const server=app.listen(PORT,()=>{
+ logger.info(
+  `Veylith Core v${VERSION} listening on port ${PORT}`,
+  {
+   component:"system",
+   operation:"listen"
+  },
+  {
+   port:PORT,
+   worker:WORKER_ID,
+   runtimeId:RUNTIME_ID,
+   aiProvider:ai.provider,
+   aiModel:ai.model,
+   aiConfigured:ai.configured,
+   githubConfigured:GITHUB_ENABLED,
+   githubOwner:GITHUB_OWNER||null,
+   workspace:ROOT,
+   database:DB_PATH
+  }
+ );
+
+ setWorker("online","idle");
+ void startBackgroundServices();
+});
+
+let workerRunning=false;
+let metricsRunning=false;
+let recoveryRunning=false;
+
+async function runWorker(){
+ if(workerRunning)return;
+ workerRunning=true;
+
+ try{
+  await workerLoop();
+ }catch(error){
+  logger.error(
+   "Worker loop failed",
+   {component:"worker",operation:"loop"},
+   undefined,
+   error
+  );
+
+  event(
+   "worker.error",
+   error instanceof Error?error.message:String(error),
+   {
+    component:"worker",
+    level:"error"
+   }
+  );
+ }finally{
+  workerRunning=false;
+ }
+}
+
+async function runMetrics(){
+ if(metricsRunning)return;
+ metricsRunning=true;
+
+ try{
+  await collectMetrics();
+ }catch(error){
+  event(
+   "metrics.error",
+   error instanceof Error?error.message:String(error),
+   {
+    component:"metrics",
+    level:"warn"
+   }
+  );
+ }finally{
+  metricsRunning=false;
+ }
+}
+
+async function runRecovery(){
+ if(recoveryRunning)return;
+ recoveryRunning=true;
+
+ try{
+  await resumePausedAIJobs();
+ }catch(error){
+  logger.error(
+   "Background recovery failed",
+   {component:"recovery",operation:"resume"},
+   undefined,
+   error
+  );
+
+  event(
+   "recovery.error",
+   error instanceof Error?error.message:String(error),
+   {
+    component:"recovery",
+    level:"warn"
+   }
+  );
+ }finally{
+  recoveryRunning=false;
+ }
+}
+
+async function startBackgroundServices(){
+ void runMetrics();
+ void runWorker();
+ void runRecovery();
+
+ setInterval(()=>{
+  void runWorker();
+ },POLL);
+
+ setInterval(()=>{
+  void runMetrics();
+ },METRIC_INTERVAL);
+
+ setInterval(()=>{
+  void runRecovery();
+ },5000);
+}
+
+let shuttingDown=false;
+
+type ShutdownMode="graceful"|"fatal";
+
+async function shutdown(
+ reason:string,
+ mode:ShutdownMode="graceful",
+ fatalError?:unknown
+){
+ if(shuttingDown)return;
+ shuttingDown=true;
+
+ const crashed=mode==="fatal";
+
+ if(crashed){
+  const message=
+   fatalError instanceof Error
+    ?fatalError.stack||fatalError.message
+    :String(fatalError||reason);
+
+  logger.fatal(
+   `Veylith fatal shutdown: ${reason}`,
+   {
+    component:"system",
+    operation:"shutdown"
+   },
+   {reason,runtimeId:RUNTIME_ID},
+   fatalError
+  );
+
+  try{
+   event(
+    "system.fatal",
+    message,
+    {
+     component:"system",
+     level:"fatal",
+     data:{
+      kind:reason,
+      runtimeId:RUNTIME_ID
+     }
+    }
+   );
+  }catch{}
+
+  try{
+   setRuntimeStatus(
+    "crashed",
+    `${reason}: ${message.slice(0,1000)}`
+   );
+  }catch{}
+ }else{
+  logger.info(
+   `Veylith shutting down (${reason})`,
+   {
+    component:"system",
+    operation:"shutdown"
+   }
+  );
+
+  try{markRuntimeStopping(reason)}catch{}
+
+  try{
+   event(
+    "system.stopping",
+    `Veylith received ${reason}`,
+    {
+     component:"system",
+     data:{runtimeId:RUNTIME_ID}
+    }
+   );
+  }catch{}
+ }
+
+ try{
+  try{
+   await cancelAllSandboxes("shutdown");
+  }catch(error){
+   logger.error(
+    "Sandbox cleanup failed during shutdown",
+    {
+     component:"system",
+     operation:"sandbox-cleanup"
+    },
+    {reason},
+    error
+   );
+  }
+
+  try{
+   releaseRuntimeJobs(
+    RUNTIME_ID,
+    crashed
+     ?`Runtime crashed: ${reason}`
+     :`Graceful shutdown: ${reason}`
+   );
+  }catch(error){
+   logger.error(
+    "Job release failed during shutdown",
+    {
+     component:"system",
+     operation:"job-release"
+    },
+    {reason},
+    error
+   );
+  }
+
+  if(!crashed){
+   try{markRuntimeStopped(reason)}catch{}
+
+   try{
+    event(
+     "system.stopped",
+     `Veylith stopped after ${reason}`,
+     {
+      component:"system",
+      data:{runtimeId:RUNTIME_ID}
+     }
+    );
+   }catch{}
+  }
+ }finally{
+  const exitCode=crashed?1:0;
+
+  const forceTimer=setTimeout(()=>{
+   try{db.close()}catch{}
+   process.exit(exitCode||1);
+  },5000);
+
+  forceTimer.unref();
+
+  server.close(()=>{
+   clearTimeout(forceTimer);
+   try{db.close()}catch{}
+   process.exit(exitCode);
+  });
+ }
+}
+
+function fatal(kind:string,error:unknown){
+ void shutdown(kind,"fatal",error);
+}
+
+process.on("SIGINT",()=>{
+ void shutdown("SIGINT");
+});
+
+process.on("SIGTERM",()=>{
+ void shutdown("SIGTERM");
+});
+
+process.on("uncaughtException",error=>{
+ fatal("uncaughtException",error);
+});
+
+process.on("unhandledRejection",error=>{
+ fatal("unhandledRejection",error);
+});
+
+
+
+
+
+=== CORE RECOVERY ===
+import {recoverActiveDevelopmentSessions} from "../development/development-lifecycle.service.js";
+import {db} from "../database/database.js";
+import {
+ AI_RECOVERY_INTERVAL_MS,
+ now
+} from "../config/config.js";
+import {event,setWorker} from "./telemetry.js";
+import {
+ aiProviderHealth,
+ getAIProvider
+} from "../agent/provider.service.js";
+import {
+ providerCircuitStatus
+} from "./provider-circuit.service.js";
+import {resumeTask} from "./task.service.js";
+import {recoverJobs} from "../jobs/job-recovery.service.js";
+import {enqueueTask} from "../jobs/job.service.js";
+
+let checking=false;
+let lastCheck=0;
+
+export function recoverInterruptedTasks(){
+ const result=recoverJobs();
+ const developmentSessions=recoverActiveDevelopmentSessions();
+ setWorker("online","idle");
+ return result.local+result.expired+result.reconciled;
+}
+
+export async function resumePausedAIJobs(){
+ if(checking)return;
+
+ const time=Date.now();
+
+ if(time-lastCheck<AI_RECOVERY_INTERVAL_MS)return;
+
+ const paused=db.prepare(
+  "SELECT * FROM tasks WHERE status='paused' AND phase='waiting_ai' ORDER BY updated_at ASC"
+ ).all() as any[];
+
+ if(!paused.length)return;
+
+ const provider=getAIProvider();
+ const before=providerCircuitStatus(provider.name);
+
+ if(
+  before.state==="open"&&
+  before.retryAt!==null&&
+  time<before.retryAt
+ ){
+  lastCheck=time;
+
+  event(
+   "ai.recovery.cooldown",
+   "AI recovery skipped while provider circuit is cooling down",
+   {
+    data:{
+     provider:provider.name,
+     paused:paused.length,
+     retryAt:new Date(before.retryAt).toISOString(),
+     remainingMs:before.retryAt-time
+    }
+   }
+  );
+
+  return;
+ }
+
+ checking=true;
+ lastCheck=time;
+
+ try{
+  event(
+   "ai.recovery.probe",
+   `Probing AI provider before resuming ${paused.length} paused task${paused.length===1?"":"s"}`,
+   {
+    data:{
+     provider:provider.name,
+     state:providerCircuitStatus(provider.name).state,
+     paused:paused.length
+    }
+   }
+  );
+
+  const health=await aiProviderHealth();
+  const after=providerCircuitStatus(provider.name);
+
+  if(!health.configured||after.state==="open"){
+   event(
+    "ai.recovery.wait",
+    "AI provider recovery probe failed",
+    {
+     level:"warn",
+     data:{
+      provider:provider.name,
+      model:health.model,
+      state:after.state,
+      failures:after.consecutiveFailures,
+      retryAt:after.retryAt
+       ?new Date(after.retryAt).toISOString()
+       :null
+     }
+    }
+   );
+
+   return;
+  }
+
+  let resumed=0;
+
+  for(const task of paused){
+   try{
+    resumeTask(
+     task.id,
+     "ai_provider_circuit_recovered"
+    );
+    resumed++;
+   }catch(error){
+    event(
+     "ai.recovery.task_error",
+     error instanceof Error
+      ?error.message
+      :String(error),
+     {
+      taskId:task.id,
+      projectId:task.project_id,
+      level:"warn"
+     }
+    );
+   }
+  }
+
+  event(
+   "ai.recovery.ready",
+   `AI provider recovered; ${resumed} task${resumed===1?"":"s"} requeued`,
+   {
+    data:{
+     provider:provider.name,
+     model:health.model,
+     state:providerCircuitStatus(provider.name).state,
+     count:resumed
+    }
+   }
+  );
+ }catch(error){
+  event(
+   "ai.recovery.error",
+   error instanceof Error
+    ?error.message
+    :String(error),
+   {level:"warn"}
+  );
+ }finally{
+  checking=false;
+ }
+}
+
+
+
+
+
+=== V1 STARTUP ===
+import{recoverAutonomousLifecycles}from"./lifecycle-recovery.service.js";
+import{event}from"../../../core/telemetry.js";
+import{logger}from"../../../logging/logger.service.js";
+
+let startupRecoveryCompleted=false;
+let startupRecoveryRunning=false;
+
+export function autonomousLifecycleStartupRecovered(){
+ return startupRecoveryCompleted;
+}
+
+export async function recoverV1AutonomousStartup(){
+ if(startupRecoveryCompleted){
+  return{skipped:true,recovered:0};
+ }
+ if(startupRecoveryRunning){
+  return{skipped:true,recovered:0};
+ }
+ startupRecoveryRunning=true;
+ try{
+  const recovered=recoverAutonomousLifecycles();
+  startupRecoveryCompleted=true;
+  event(
+   "orchestrator.v1_startup_recovery_completed",
+   `Recovered ${recovered.length} autonomous lifecycle(s)`,
+   {
+    component:"v1-orchestration",
+    data:{recovered:recovered.length}
+   }
+  );
+  return{
+   skipped:false,
+   recovered:recovered.length
+  };
+ }catch(error){
+  logger.error(
+   "Veylith v1 autonomous startup recovery failed",
+   {
+    component:"v1-orchestration",
+    operation:"startup-recovery"
+   },
+   undefined,
+   error
+  );
+  throw error;
+ }finally{
+  startupRecoveryRunning=false;
+ }
+}
+
+
+=== V1 LIFECYCLE RECOVERY ===
+import{listRecoverableLifecycles,updateLifecycleCheckpoint}from"./lifecycle.repository.js";
+import{goalExecutionState,synchronizeGoalExecution}from"../../../team/goal-team-execution.service.js";
+import{recoverDevelopmentSession}from"../../../development/development-session.service.js";
+import{getDeliveryPlan,latestDeliveryPlan,setDeliveryPlanStatus}from"../../../delivery/delivery-plan.repository.js";
+import{findDeliveryPublicationByPlan}from"../../../delivery/delivery-publication.repository.js";
+import{deliveryVerificationForPlan}from"../../../delivery/delivery-verification.service.js";
+import{findReleaseByPlan}from"../../../delivery/release-history.repository.js";
+import{event}from"../../../core/telemetry.js";
+import type{AutonomousLifecycleCheckpoint,AutonomousLifecycleStage,AutonomousLifecycleStatus}from"./lifecycle.types.js";
+
+function graphComplete(state:ReturnType<typeof goalExecutionState>){
+ return state.total>0&&state.completed===state.total;
+}
+
+function deliveryPlanForLifecycle(lifecycle:AutonomousLifecycleCheckpoint){
+ if(lifecycle.deliveryPlanId){
+  const exact=getDeliveryPlan(lifecycle.deliveryPlanId);
+  if(exact&&exact.projectId===lifecycle.projectId&&exact.goalId===lifecycle.goalId){
+   return exact;
+  }
+ }
+ const latest=latestDeliveryPlan(lifecycle.projectId);
+ if(latest&&latest.goalId===lifecycle.goalId)return latest;
+ return null;
+}
+
+function recoveryState(
+ lifecycle:AutonomousLifecycleCheckpoint,
+ state:ReturnType<typeof goalExecutionState>
+){
+ const plan=deliveryPlanForLifecycle(lifecycle);
+ if(!plan){
+  if(!graphComplete(state)){
+   return{
+    stage:lifecycle.stage,
+    status:"running" as AutonomousLifecycleStatus,
+    completed:false,
+    deliveryPlanId:null,
+    publicationId:null,
+    verificationId:null,
+    releaseId:null
+   };
+  }
+  return{
+   stage:"delivery" as AutonomousLifecycleStage,
+   status:"waiting" as AutonomousLifecycleStatus,
+   completed:false,
+   deliveryPlanId:null,
+   publicationId:null,
+   verificationId:null,
+   releaseId:null
+  };
+ }
+ const publication=findDeliveryPublicationByPlan(plan.id);
+ if(!publication||publication.status!=="published"){
+  return{
+   stage:"delivery" as AutonomousLifecycleStage,
+   status:"waiting" as AutonomousLifecycleStatus,
+   completed:false,
+   deliveryPlanId:plan.id,
+   publicationId:publication?.id??null,
+   verificationId:null,
+   releaseId:null
+  };
+ }
+ const verification=deliveryVerificationForPlan(plan.id);
+ if(!verification||!verification.verified||verification.status!=="verified"){
+  return{
+   stage:"verification" as AutonomousLifecycleStage,
+   status:"waiting" as AutonomousLifecycleStatus,
+   completed:false,
+   deliveryPlanId:plan.id,
+   publicationId:publication.id,
+   verificationId:verification?.id??null,
+   releaseId:null
+  };
+ }
+ if(plan.status!=="delivered"){
+  setDeliveryPlanStatus(plan.id,"delivered");
+ }
+ const release=findReleaseByPlan(plan.id);
+ if(!release||release.status!=="released"){
+  return{
+   stage:"release" as AutonomousLifecycleStage,
+   status:"waiting" as AutonomousLifecycleStatus,
+   completed:false,
+   deliveryPlanId:plan.id,
+   publicationId:publication.id,
+   verificationId:verification.id,
+   releaseId:release?.id??null
+  };
+ }
+ return{
+  stage:"completed" as AutonomousLifecycleStage,
+  status:"completed" as AutonomousLifecycleStatus,
+  completed:true,
+  deliveryPlanId:plan.id,
+  publicationId:publication.id,
+  verificationId:verification.id,
+  releaseId:release.id
+ };
+}
+
+export function recoverAutonomousLifecycles(){
+ const lifecycles=listRecoverableLifecycles();
+ const recovered=[];
+ for(const lifecycle of lifecycles){
+  try{
+   try{recoverDevelopmentSession(lifecycle.projectId);}catch{}
+   const before=goalExecutionState(lifecycle.goalId);
+   const hasDeliveryState=Boolean(deliveryPlanForLifecycle(lifecycle));
+   let synchronized:null|ReturnType<typeof synchronizeGoalExecution>=null;
+   if(!graphComplete(before)&&!hasDeliveryState){
+    synchronized=synchronizeGoalExecution(lifecycle.goalId);
+   }
+   const state=goalExecutionState(lifecycle.goalId);
+   const authority=recoveryState(lifecycle,state);
+   const checkpoint=updateLifecycleCheckpoint(lifecycle.goalId,{
+    ...authority,
+    error:null,
+    metadata:{
+     ...lifecycle.metadata,
+     recoveredAt:new Date().toISOString(),
+     totalWork:state.total,
+     completedWork:state.completed,
+     graphComplete:graphComplete(state),
+     durableDeliveryState:hasDeliveryState,
+     releaseAuthority:authority.completed
+    }
+   });
+   event("orchestrator.v1_lifecycle_recovered","v1 lifecycle recovered after restart",{
+    projectId:lifecycle.projectId,
+    component:"v1-orchestration",
+    data:{
+     goalId:lifecycle.goalId,
+     stage:checkpoint.stage,
+     status:checkpoint.status
+    }
+   });
+   recovered.push({checkpoint,synchronized,state});
+  }catch(error){
+   const message=error instanceof Error?error.message:String(error);
+   updateLifecycleCheckpoint(lifecycle.goalId,{
+    status:"waiting",
+    error:message
+   });
+  }
+ }
+ return recovered;
+}
+
+
+=== V1 LIFECYCLE REPOSITORY ===
+import crypto from"node:crypto";
+import{db}from"../../../database/database.js";
+import{now}from"../../../config/config.js";
+import type{
+ AutonomousLifecycleCheckpoint,
+ AutonomousLifecycleStage,
+ AutonomousLifecycleStatus
+}from"./lifecycle.types.js";
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS autonomous_lifecycle_checkpoints(
+ id TEXT PRIMARY KEY,
+ project_id TEXT NOT NULL,
+ goal_id TEXT NOT NULL UNIQUE,
+ stage TEXT NOT NULL,
+ status TEXT NOT NULL,
+ task_id TEXT,
+ work_item_id TEXT,
+ delivery_plan_id TEXT,
+ publication_id TEXT,
+ verification_id TEXT,
+ release_id TEXT,
+ error TEXT,
+ metadata_json TEXT NOT NULL DEFAULT '{}',
+ created_at TEXT NOT NULL,
+ updated_at TEXT NOT NULL,
+ completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_autonomous_lifecycle_project
+ ON autonomous_lifecycle_checkpoints(project_id);
+CREATE INDEX IF NOT EXISTS idx_autonomous_lifecycle_status
+ ON autonomous_lifecycle_checkpoints(status);
+`);
+
+function parse(value:any){
+ try{return JSON.parse(String(value||"{}"));}catch{return{};}
+}
+
+function map(row:any):AutonomousLifecycleCheckpoint{
+ return{
+  id:String(row.id),
+  projectId:String(row.project_id),
+  goalId:String(row.goal_id),
+  stage:row.stage,
+  status:row.status,
+  taskId:row.task_id?String(row.task_id):null,
+  workItemId:row.work_item_id?String(row.work_item_id):null,
+  deliveryPlanId:row.delivery_plan_id?String(row.delivery_plan_id):null,
+  publicationId:row.publication_id?String(row.publication_id):null,
+  verificationId:row.verification_id?String(row.verification_id):null,
+  releaseId:row.release_id?String(row.release_id):null,
+  error:row.error?String(row.error):null,
+  metadata:parse(row.metadata_json),
+  createdAt:String(row.created_at),
+  updatedAt:String(row.updated_at),
+  completedAt:row.completed_at?String(row.completed_at):null
+ };
+}
+
+export function lifecycleCheckpoint(goalId:string){
+ const row=db.prepare(`
+  SELECT * FROM autonomous_lifecycle_checkpoints WHERE goal_id=?
+ `).get(goalId);
+ return row?map(row):null;
+}
+
+export function ensureLifecycleCheckpoint(input:{
+ projectId:string;
+ goalId:string;
+ stage?:AutonomousLifecycleStage;
+ taskId?:string|null;
+ workItemId?:string|null;
+}){
+ const existing=lifecycleCheckpoint(input.goalId);
+ if(existing)return existing;
+ const time=now();
+ const id=`alc_${crypto.randomBytes(8).toString("hex")}`;
+ db.prepare(`
+  INSERT INTO autonomous_lifecycle_checkpoints(
+   id,project_id,goal_id,stage,status,task_id,work_item_id,
+   metadata_json,created_at,updated_at
+  )VALUES(?,?,?,?,?,?,?,?,?,?)
+ `).run(
+  id,
+  input.projectId,
+  input.goalId,
+  input.stage??"development",
+  "running",
+  input.taskId??null,
+  input.workItemId??null,
+  "{}",
+  time,
+  time
+ );
+ return lifecycleCheckpoint(input.goalId)!;
+}
+
+export function updateLifecycleCheckpoint(
+ goalId:string,
+ input:{
+  stage?:AutonomousLifecycleStage;
+  status?:AutonomousLifecycleStatus;
+  taskId?:string|null;
+  workItemId?:string|null;
+  deliveryPlanId?:string|null;
+  publicationId?:string|null;
+  verificationId?:string|null;
+  releaseId?:string|null;
+  error?:string|null;
+  metadata?:Record<string,any>;
+  completed?:boolean;
+ }
+){
+ const current=lifecycleCheckpoint(goalId);
+ if(!current)throw new Error(`Lifecycle checkpoint not found: ${goalId}`);
+ const time=now();
+ db.prepare(`
+  UPDATE autonomous_lifecycle_checkpoints
+  SET stage=?,
+      status=?,
+      task_id=?,
+      work_item_id=?,
+      delivery_plan_id=?,
+      publication_id=?,
+      verification_id=?,
+      release_id=?,
+      error=?,
+      metadata_json=?,
+      updated_at=?,
+      completed_at=?
+  WHERE goal_id=?
+ `).run(
+  input.stage??current.stage,
+  input.status??current.status,
+  input.taskId===undefined?current.taskId:input.taskId,
+  input.workItemId===undefined?current.workItemId:input.workItemId,
+  input.deliveryPlanId===undefined?current.deliveryPlanId:input.deliveryPlanId,
+  input.publicationId===undefined?current.publicationId:input.publicationId,
+  input.verificationId===undefined?current.verificationId:input.verificationId,
+  input.releaseId===undefined?current.releaseId:input.releaseId,
+  input.error===undefined?current.error:input.error,
+  JSON.stringify(input.metadata??current.metadata),
+  time,
+  input.completed?time:current.completedAt,
+  goalId
+ );
+ return lifecycleCheckpoint(goalId)!;
+}
+
+export function listRecoverableLifecycles(){
+ return(db.prepare(`
+  SELECT *
+  FROM autonomous_lifecycle_checkpoints
+  WHERE status IN('running','waiting','delivering')
+  ORDER BY updated_at,id
+ `).all() as any[]).map(map);
+}
+
+
+=== DATABASE ===
+import {DatabaseSync} from "node:sqlite";
+import {mkdir} from "node:fs/promises";
+import path from "node:path";
+import {DB_PATH,ROOT,now} from "../config/config.js";
+await mkdir(path.dirname(DB_PATH),{recursive:true});
+await mkdir(ROOT,{recursive:true});
+export const db=new DatabaseSync(DB_PATH);
+db.exec("PRAGMA journal_mode=WAL;");
+db.exec("PRAGMA foreign_keys=ON;");
+db.exec(`
+CREATE TABLE IF NOT EXISTS projects(
+id TEXT PRIMARY KEY,
+name TEXT NOT NULL,
+slug TEXT NOT NULL UNIQUE,
+status TEXT NOT NULL DEFAULT 'queued',
+phase TEXT NOT NULL DEFAULT 'queued',
+progress INTEGER NOT NULL DEFAULT 0,
+workspace TEXT NOT NULL,
+summary TEXT,
+created_at TEXT NOT NULL,
+updated_at TEXT NOT NULL,
+completed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS tasks(
+id TEXT PRIMARY KEY,
+project_id TEXT NOT NULL,
+title TEXT NOT NULL,
+prompt TEXT NOT NULL,
+status TEXT NOT NULL DEFAULT 'queued',
+phase TEXT NOT NULL DEFAULT 'queued',
+priority INTEGER NOT NULL DEFAULT 0,
+attempts INTEGER NOT NULL DEFAULT 0,
+repair_attempts INTEGER NOT NULL DEFAULT 0,
+max_attempts INTEGER NOT NULL DEFAULT 3,
+result TEXT,
+error TEXT,
+created_at TEXT NOT NULL,
+started_at TEXT,
+completed_at TEXT,
+updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS events(
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+type TEXT NOT NULL,
+worker_id TEXT,
+project_id TEXT,
+task_id TEXT,
+level TEXT NOT NULL DEFAULT 'info',
+message TEXT NOT NULL,
+data TEXT,
+created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS metrics(
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+cpu REAL NOT NULL,
+memory REAL NOT NULL,
+memory_used INTEGER NOT NULL,
+memory_total INTEGER NOT NULL,
+active_tasks INTEGER NOT NULL,
+queued_tasks INTEGER NOT NULL,
+completed_tasks INTEGER NOT NULL,
+failed_tasks INTEGER NOT NULL,
+uptime INTEGER NOT NULL,
+created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS workers(
+id TEXT PRIMARY KEY,
+hostname TEXT NOT NULL,
+pid INTEGER NOT NULL,
+status TEXT NOT NULL,
+phase TEXT NOT NULL,
+task_id TEXT,
+project_id TEXT,
+started_at TEXT NOT NULL,
+heartbeat_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS project_memory(
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+project_id TEXT NOT NULL,
+type TEXT NOT NULL,
+content TEXT NOT NULL,
+created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS executions(
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+project_id TEXT NOT NULL,
+task_id TEXT NOT NULL,
+command TEXT NOT NULL,
+args TEXT NOT NULL,
+exit_code INTEGER,
+stdout TEXT,
+stderr TEXT,
+duration_ms INTEGER,
+created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS development_steps(
+id TEXT PRIMARY KEY,
+task_id TEXT NOT NULL,
+project_id TEXT NOT NULL,
+phase TEXT NOT NULL,
+agent TEXT NOT NULL,
+title TEXT NOT NULL,
+status TEXT NOT NULL DEFAULT 'queued',
+sequence INTEGER NOT NULL DEFAULT 0,
+input TEXT,
+output TEXT,
+error TEXT,
+started_at TEXT,
+completed_at TEXT,
+created_at TEXT NOT NULL,
+updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS jobs(
+ id TEXT PRIMARY KEY,
+ type TEXT NOT NULL DEFAULT 'task',
+ task_id TEXT NOT NULL,
+ project_id TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'queued',
+ priority INTEGER NOT NULL DEFAULT 0,
+ attempts INTEGER NOT NULL DEFAULT 0,
+ max_attempts INTEGER NOT NULL DEFAULT 3,
+ available_at TEXT NOT NULL,
+ claimed_by TEXT,
+ claimed_at TEXT,
+ lease_expires_at TEXT,
+ heartbeat_at TEXT,
+ last_error TEXT,
+ created_at TEXT NOT NULL,
+ updated_at TEXT NOT NULL,
+ completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_dispatch ON jobs(status,available_at,priority,created_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_task ON jobs(task_id,created_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_lease ON jobs(status,lease_expires_at);
+CREATE TABLE IF NOT EXISTS worker_slots(
+ id TEXT PRIMARY KEY,
+ worker_id TEXT NOT NULL,
+ slot INTEGER NOT NULL,
+ hostname TEXT NOT NULL,
+ pid INTEGER NOT NULL,
+ status TEXT NOT NULL DEFAULT 'idle',
+ phase TEXT NOT NULL DEFAULT 'waiting',
+ job_id TEXT,
+ task_id TEXT,
+ project_id TEXT,
+ started_at TEXT NOT NULL,
+ heartbeat_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_worker_slots_worker ON worker_slots(worker_id,slot);
+CREATE INDEX IF NOT EXISTS idx_worker_slots_status ON worker_slots(status,heartbeat_at);
+CREATE TABLE IF NOT EXISTS git_publication_state(
+ project_id TEXT PRIMARY KEY,
+ stage TEXT NOT NULL DEFAULT 'none',
+ commit_sha TEXT,
+ branch TEXT,
+ github_owner TEXT,
+ github_repo TEXT,
+ github_url TEXT,
+ remote_url TEXT,
+ committed_at TEXT,
+ repository_ready_at TEXT,
+ pushed_at TEXT,
+ verified_at TEXT,
+ updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_git_publication_stage ON git_publication_state(stage,updated_at);
+CREATE TABLE IF NOT EXISTS provider_circuits(
+provider TEXT PRIMARY KEY,
+state TEXT NOT NULL DEFAULT 'closed',
+consecutive_failures INTEGER NOT NULL DEFAULT 0,
+consecutive_successes INTEGER NOT NULL DEFAULT 0,
+opened_at INTEGER,
+retry_at INTEGER,
+cooldown_ms INTEGER NOT NULL DEFAULT 120000,
+last_failure_at INTEGER,
+last_success_at INTEGER,
+last_error TEXT,
+updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_provider_circuits_state ON provider_circuits(state,retry_at);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status,priority,created_at);
+CREATE INDEX IF NOT EXISTS idx_events_project ON events(project_id,id);
+CREATE INDEX IF NOT EXISTS idx_steps_task ON development_steps(task_id,sequence);
+CREATE INDEX IF NOT EXISTS idx_steps_project ON development_steps(project_id,sequence);
+`);
+function ensureColumn(table:string,column:string,type:string){
+ const columns=db.prepare(`PRAGMA table_info(${table})`).all() as any[];
+ if(!columns.some(x=>x.name===column))db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+}
+ensureColumn("projects","phase","TEXT NOT NULL DEFAULT 'queued'");
+ensureColumn("projects","summary","TEXT");
+ensureColumn("tasks","repair_attempts","INTEGER NOT NULL DEFAULT 0");
+ensureColumn("projects","github_owner","TEXT");
+ensureColumn("projects","github_repo","TEXT");
+ensureColumn("projects","github_url","TEXT");
+ensureColumn("projects","github_branch","TEXT");
+ensureColumn("projects","github_commit","TEXT");
+ensureColumn("projects","github_pushed_at","TEXT");
+export function memory(projectId:string,type:string,content:unknown){
+ let serialized:string;
+ if(typeof content==="string")serialized=content;
+ else if(content===undefined)serialized="null";
+ else{
+  try{
+   serialized=JSON.stringify(content)??"null";
+  }catch{
+   serialized=String(content);
+  }
+ }
+ db.prepare("INSERT INTO project_memory(project_id,type,content,created_at) VALUES(?,?,?,?)").run(projectId,type,serialized,now());
+}
+export function projectMemory(projectId:string){
+ return db.prepare("SELECT type,content,created_at FROM project_memory WHERE project_id=? ORDER BY id DESC LIMIT 30").all(projectId);
+}
+
+
+
+
+
+
+
+============================================================
+END CAPTURE
+============================================================

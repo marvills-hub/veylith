@@ -1,4 +1,4 @@
-import path from "node:path";
+﻿import path from "node:path";
 import type {DevelopmentPlan,DevelopmentResult} from "../orchestration/pipeline.types.js";
 import type {DiagnosticResult,RepairHistoryItem} from "../agent/diagnostic.service.js";
 
@@ -91,7 +91,7 @@ export function validateRepairScope(scope:RepairScope,result:DevelopmentResult):
  const changedFiles=unique((result.files||[]).map(file=>file.path));
  let outsideScope:string[]=[];
  if(scope.expansion==="focused"){
-  outsideScope=changedFiles.filter(changed=>!scope.diagnosedFiles.includes(changed));
+  outsideScope=changedFiles.filter(changed=>!scope.allowedFiles.includes(changed)&&!scope.diagnosedFiles.some(target=>related(changed,target)));
  }else if(scope.expansion==="expanded"){
   outsideScope=changedFiles.filter(changed=>{
    if(scope.allowedFiles.includes(changed))return false;
@@ -99,6 +99,9 @@ export function validateRepairScope(scope:RepairScope,result:DevelopmentResult):
   });
  }
  const suspicious:string[]=[];
+ if(scope.diagnosedFiles.length&&scope.expansion==="focused"&&!changedFiles.some(changed=>scope.diagnosedFiles.some(target=>related(changed,target)))){
+  suspicious.push(`Focused repair did not modify a diagnosed root-cause file: ${scope.diagnosedFiles.join(", ")}`);
+ }
  if(changedFiles.length>scope.maxChangedFiles){
   suspicious.push(`Repair changed ${changedFiles.length} files; scope allows ${scope.maxChangedFiles}.`);
  }
@@ -144,4 +147,6 @@ export function repairScopePrompt(scope:RepairScope){
     :"- The failure has resisted narrower repair. Broader investigation is allowed, but every changed file must still be justified by the root cause."
  ].join("\n");
 }
+
+
 

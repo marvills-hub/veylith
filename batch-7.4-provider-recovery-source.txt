@@ -1,0 +1,758 @@
+============================================================
+BATCH 7.4 - PROVIDER RECOVERY SOURCE
+============================================================
+
+--- GOAL ROLE EXECUTOR FAILURE BOUNDARY ---
+
+  src\team\goal-role-executor.service.ts:1:import {synchronizeTaskDevelopment} from "../development/development-lifecycle.service.js";
+> src\team\goal-role-executor.service.ts:2:import {beginAutonomousLifecycle,checkpointAutonomousLifecycle,failAutonomousLifecycle} from "../orchestration/v1/lifecycle/lifecycle.service.js";
+  src\team\goal-role-executor.service.ts:3:import crypto from "node:crypto";
+  src\team\goal-role-executor.service.ts:4:import {db,memory} from "../database/database.js";
+  src\team\goal-role-executor.service.ts:5:import {now} from "../config/config.js";
+  src\team\goal-role-executor.service.ts:6:import {event} from "../core/telemetry.js";
+  src\team\goal-role-executor.service.ts:7:import {designArchitecture} from "../agent/architect.service.js";
+  src\team\goal-role-executor.service.ts:8:import {createDevelopmentPlan} from "../agent/development-planner.service.js";
+  src\team\goal-role-executor.service.ts:9:import {developProject} from "../agent/developer.service.js";
+  src\team\goal-role-executor.service.ts:10:import {reviewProject} from "../agent/reviewer.service.js";
+  src\team\goal-role-executor.service.ts:11:import {applyDevelopment,validateDevelopment} from "../orchestration/pipeline.service.js";
+  src\team\goal-role-executor.service.ts:12:import {executeV1AutonomousDelivery} from "../orchestration/v1/autonomous-delivery.service.js";
+  src\team\goal-role-executor.service.ts:13:import {buildSharedProjectContext} from "./shared-context.service.js";
+  src\team\goal-role-executor.service.ts:14:import {buildAgentProjectContext} from "../context/agent-project-context.service.js";
+  src\team\goal-role-executor.service.ts:15:import {synchronizeRepositoryLearning} from "../evolution/repository-learning-lifecycle.service.js";
+  src\team\goal-role-executor.service.ts:16:import {
+  src\team\goal-role-executor.service.ts:17: prepareGoalTaskExecution,
+  src\team\goal-role-executor.service.ts:18: completeGoalTaskExecution,
+  src\team\goal-role-executor.service.ts:19: goalExecutionForTask
+  src\team\goal-role-executor.service.ts:20:} from "./goal-team-execution.service.js";
+  src\team\goal-role-executor.service.ts:21:import {consumeIncomingHandoffs,createWorkHandoff,deliverWorkHandoff} from "./handoff.service.js";
+  src\team\goal-role-executor.service.ts:22:import {listGoalHandoffs} from "./handoff.repository.js";
+  src\team\goal-role-executor.service.ts:23:import {loadGoalTaskGraph} from "../goals/goal-task-graph.service.js";
+  src\team\goal-role-executor.service.ts:24:import {recoverGoalWork} from "./team-recovery.service.js";
+  src\team\goal-role-executor.service.ts:25:import type {AgentRole} from "./team.types.js";
+  src\team\goal-role-executor.service.ts:26:import type {
+  src\team\goal-role-executor.service.ts:27: ArchitectureResult,
+  src\team\goal-role-executor.service.ts:28: DevelopmentPlan,
+  src\team\goal-role-executor.service.ts:29: DevelopmentResult
+  src\team\goal-role-executor.service.ts:30:} from "../orchestration/pipeline.types.js";
+  src\team\goal-role-executor.service.ts:31:
+  src\team\goal-role-executor.service.ts:32:export type GoalRoleResultStatus="running"|"completed"|"failed";
+  src\team\goal-role-executor.service.ts:33:
+  src\team\goal-role-executor.service.ts:34:export interface GoalRoleResult{
+  src\team\goal-role-executor.service.ts:35: id:string;
+  src\team\goal-role-executor.service.ts:36: goalId:string;
+  src\team\goal-role-executor.service.ts:37: projectId:string;
+  src\team\goal-role-executor.service.ts:178: const time=now();
+  src\team\goal-role-executor.service.ts:179: db.prepare(`
+  src\team\goal-role-executor.service.ts:180:  UPDATE goal_role_results
+  src\team\goal-role-executor.service.ts:181:  SET status='completed',
+  src\team\goal-role-executor.service.ts:182:      summary=?,
+  src\team\goal-role-executor.service.ts:183:      result_json=?,
+  src\team\goal-role-executor.service.ts:184:      error=NULL,
+  src\team\goal-role-executor.service.ts:185:      completed_at=COALESCE(completed_at,?),
+  src\team\goal-role-executor.service.ts:186:      updated_at=?
+  src\team\goal-role-executor.service.ts:187:  WHERE id=?
+  src\team\goal-role-executor.service.ts:188: `).run(
+  src\team\goal-role-executor.service.ts:189:  summary||null,
+  src\team\goal-role-executor.service.ts:190:  JSON.stringify(result??null),
+  src\team\goal-role-executor.service.ts:191:  time,
+  src\team\goal-role-executor.service.ts:192:  time,
+  src\team\goal-role-executor.service.ts:193:  id
+  src\team\goal-role-executor.service.ts:194: );
+  src\team\goal-role-executor.service.ts:195: return getGoalRoleResult(id)!;
+  src\team\goal-role-executor.service.ts:196:}
+  src\team\goal-role-executor.service.ts:197:
+> src\team\goal-role-executor.service.ts:198:function failRoleResult(id:string,error:unknown){
+  src\team\goal-role-executor.service.ts:199: const message=error instanceof Error?error.message:String(error);
+  src\team\goal-role-executor.service.ts:200: db.prepare(`
+  src\team\goal-role-executor.service.ts:201:  UPDATE goal_role_results
+  src\team\goal-role-executor.service.ts:202:  SET status='failed',error=?,updated_at=?
+  src\team\goal-role-executor.service.ts:203:  WHERE id=?
+  src\team\goal-role-executor.service.ts:204: `).run(message,now(),id);
+  src\team\goal-role-executor.service.ts:205: return getGoalRoleResult(id)!;
+  src\team\goal-role-executor.service.ts:206:}
+  src\team\goal-role-executor.service.ts:207:
+  src\team\goal-role-executor.service.ts:208:function project(projectId:string){
+  src\team\goal-role-executor.service.ts:209: const row=db.prepare("SELECT * FROM projects WHERE id=?").get(projectId) as any;
+  src\team\goal-role-executor.service.ts:210: if(!row)throw new Error(`Project not found: ${projectId}`);
+  src\team\goal-role-executor.service.ts:211: return row;
+  src\team\goal-role-executor.service.ts:212:}
+  src\team\goal-role-executor.service.ts:213:
+  src\team\goal-role-executor.service.ts:214:function resultSummary(role:AgentRole,result:any){
+  src\team\goal-role-executor.service.ts:215: if(result?.summary)return String(result.summary);
+  src\team\goal-role-executor.service.ts:216: if(role==="tester"){
+  src\team\goal-role-executor.service.ts:217:  return result?.success
+  src\team\goal-role-executor.service.ts:218:   ?"Validation completed successfully."
+  src\team\goal-role-executor.service.ts:219:   :"Validation failed.";
+  src\team\goal-role-executor.service.ts:220: }
+  src\team\goal-role-executor.service.ts:221: if(role==="delivery"){
+  src\team\goal-role-executor.service.ts:222:  return "Repository delivery completed.";
+  src\team\goal-role-executor.service.ts:223: }
+  src\team\goal-role-executor.service.ts:224: return `${role} work completed.`;
+  src\team\goal-role-executor.service.ts:225:}
+  src\team\goal-role-executor.service.ts:226:
+  src\team\goal-role-executor.service.ts:227:function dependencyResults(goalId:string,workItemId:string){
+  src\team\goal-role-executor.service.ts:228: const graph=loadGoalTaskGraph(goalId);
+  src\team\goal-role-executor.service.ts:229: const work=graph.items.find(item=>item.id===workItemId);
+  src\team\goal-role-executor.service.ts:230: if(!work)throw new Error(`Goal work item not found: ${workItemId}`);
+  src\team\goal-role-executor.service.ts:231: const keys=new Set(work.dependencies);
+  src\team\goal-role-executor.service.ts:232: return graph.items
+  src\team\goal-role-executor.service.ts:233:  .filter(item=>keys.has(item.key))
+  src\team\goal-role-executor.service.ts:560:     type:input.role==="tester"?"validation":"other",
+  src\team\goal-role-executor.service.ts:561:     summary:input.roleResult.summary||`${source.title} completed.`,
+  src\team\goal-role-executor.service.ts:562:     reference:input.roleResult.id
+  src\team\goal-role-executor.service.ts:563:    }
+  src\team\goal-role-executor.service.ts:564:   ],
+  src\team\goal-role-executor.service.ts:565:   risks:[],
+  src\team\goal-role-executor.service.ts:566:   recommendations:[
+  src\team\goal-role-executor.service.ts:567:    `Use role result ${input.roleResult.id} as upstream execution evidence.`
+  src\team\goal-role-executor.service.ts:568:   ],
+  src\team\goal-role-executor.service.ts:569:   metadata:{
+  src\team\goal-role-executor.service.ts:570:    role:input.role,
+  src\team\goal-role-executor.service.ts:571:    roleResultId:input.roleResult.id,
+  src\team\goal-role-executor.service.ts:572:    sourceWorkKey:source.key
+  src\team\goal-role-executor.service.ts:573:   }
+  src\team\goal-role-executor.service.ts:574:  });
+  src\team\goal-role-executor.service.ts:575:  created.push(deliverWorkHandoff(handoff.id));
+  src\team\goal-role-executor.service.ts:576: }
+  src\team\goal-role-executor.service.ts:577: return created;
+  src\team\goal-role-executor.service.ts:578:}
+  src\team\goal-role-executor.service.ts:579:
+> src\team\goal-role-executor.service.ts:580:export async function executeGoalTeamTask(task:any){
+  src\team\goal-role-executor.service.ts:581: const managed=goalExecutionForTask(task.id);
+  src\team\goal-role-executor.service.ts:582: if(!managed)return null;
+  src\team\goal-role-executor.service.ts:583: const prepared=prepareGoalTaskExecution(task.id);
+  src\team\goal-role-executor.service.ts:584: synchronizeTaskDevelopment(task.id);
+  src\team\goal-role-executor.service.ts:585: if(!prepared)return null;
+  src\team\goal-role-executor.service.ts:586: if(prepared.alreadyTerminal){
+  src\team\goal-role-executor.service.ts:587:  return{
+  src\team\goal-role-executor.service.ts:588:   managed:true,
+  src\team\goal-role-executor.service.ts:589:   skipped:true,
+  src\team\goal-role-executor.service.ts:590:   goalId:prepared.goalId,
+  src\team\goal-role-executor.service.ts:591:   workItemId:prepared.workItemId
+  src\team\goal-role-executor.service.ts:592:  };
+  src\team\goal-role-executor.service.ts:593: }
+  src\team\goal-role-executor.service.ts:594: if(!prepared.assignment){
+  src\team\goal-role-executor.service.ts:595:  throw new Error(`No team assignment exists for goal work ${prepared.workItemId}.`);
+  src\team\goal-role-executor.service.ts:596: }
+  src\team\goal-role-executor.service.ts:597: const projectRow=project(task.project_id);
+  src\team\goal-role-executor.service.ts:598: beginAutonomousLifecycle({
+  src\team\goal-role-executor.service.ts:599:  projectId:task.project_id,
+  src\team\goal-role-executor.service.ts:600:  goalId:prepared.goalId,
+  src\team\goal-role-executor.service.ts:601:  taskId:task.id,
+  src\team\goal-role-executor.service.ts:602:  workItemId:prepared.workItemId
+  src\team\goal-role-executor.service.ts:603: });
+  src\team\goal-role-executor.service.ts:604: const agentContext=await buildAgentProjectContext({
+  src\team\goal-role-executor.service.ts:605:  goalId:prepared.goalId,
+  src\team\goal-role-executor.service.ts:606:  workItemId:prepared.workItemId,
+  src\team\goal-role-executor.service.ts:607:  projectId:task.project_id,
+  src\team\goal-role-executor.service.ts:608:  workspace:projectRow.workspace,
+  src\team\goal-role-executor.service.ts:609:  role:prepared.assignment.role
+  src\team\goal-role-executor.service.ts:610: });
+  src\team\goal-role-executor.service.ts:611: const context=agentContext.shared;
+  src\team\goal-role-executor.service.ts:612: const executionTask={
+  src\team\goal-role-executor.service.ts:613:  ...task,
+  src\team\goal-role-executor.service.ts:614:  prompt:[
+  src\team\goal-role-executor.service.ts:615:   task.prompt,
+  src\team\goal-role-executor.service.ts:703:  event("team.role_completed",`${prepared.assignment.role} completed ${context.work.title}`,{
+  src\team\goal-role-executor.service.ts:704:   taskId:task.id,
+  src\team\goal-role-executor.service.ts:705:   projectId:task.project_id,
+  src\team\goal-role-executor.service.ts:706:   component:"team-execution",
+  src\team\goal-role-executor.service.ts:707:   data:{
+  src\team\goal-role-executor.service.ts:708:    goalId:prepared.goalId,
+  src\team\goal-role-executor.service.ts:709:    workItemId:prepared.workItemId,
+  src\team\goal-role-executor.service.ts:710:    assignmentId:prepared.assignment.id,
+  src\team\goal-role-executor.service.ts:711:    role:prepared.assignment.role,
+  src\team\goal-role-executor.service.ts:712:    roleResultId:completed.id,
+  src\team\goal-role-executor.service.ts:713:    handoffs:handoffs.length,
+  src\team\goal-role-executor.service.ts:714:    nextDispatches:advanced?.dispatched?.length??0
+  src\team\goal-role-executor.service.ts:715:   }
+  src\team\goal-role-executor.service.ts:716:  });
+  src\team\goal-role-executor.service.ts:717:  return{
+  src\team\goal-role-executor.service.ts:718:   managed:true,
+  src\team\goal-role-executor.service.ts:719:   roleResult:completed,
+  src\team\goal-role-executor.service.ts:720:   handoffs,
+  src\team\goal-role-executor.service.ts:721:   advanced
+  src\team\goal-role-executor.service.ts:722:  };
+> src\team\goal-role-executor.service.ts:723: }catch(error){
+> src\team\goal-role-executor.service.ts:724:  failRoleResult(roleResult.id,error);
+> src\team\goal-role-executor.service.ts:725:   failAutonomousLifecycle(prepared.goalId,error);
+  src\team\goal-role-executor.service.ts:726:  throw error;
+  src\team\goal-role-executor.service.ts:727: }
+  src\team\goal-role-executor.service.ts:728:}
+  src\team\goal-role-executor.service.ts:729:
+  src\team\goal-role-executor.service.ts:730:
+  src\team\goal-role-executor.service.ts:731:
+  src\team\goal-role-executor.service.ts:732:
+  src\team\goal-role-executor.service.ts:733:
+  src\team\goal-role-executor.service.ts:734:
+  src\team\goal-role-executor.service.ts:735:
+  src\team\goal-role-executor.service.ts:736:
+  src\team\goal-role-executor.service.ts:737:
+
+
+
+
+--- LIFECYCLE SERVICE ---
+
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:1:import{
+> src\orchestration\v1\lifecycle\lifecycle.service.ts:2: ensureLifecycleCheckpoint,
+> src\orchestration\v1\lifecycle\lifecycle.service.ts:3: lifecycleCheckpoint,
+> src\orchestration\v1\lifecycle\lifecycle.service.ts:4: updateLifecycleCheckpoint
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:5:}from"./lifecycle.repository.js";
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:6:
+> src\orchestration\v1\lifecycle\lifecycle.service.ts:7:export function beginAutonomousLifecycle(input:{
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:8: projectId:string;
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:9: goalId:string;
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:10: taskId?:string|null;
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:11: workItemId?:string|null;
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:12:}){
+> src\orchestration\v1\lifecycle\lifecycle.service.ts:13: return ensureLifecycleCheckpoint({
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:14:  ...input,
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:15:  stage:"development"
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:16: });
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:17:}
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:18:
+> src\orchestration\v1\lifecycle\lifecycle.service.ts:19:export function checkpointAutonomousLifecycle(
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:20: goalId:string,
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:21: stage:any,
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:22: input:Record<string,any>={}
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:23:){
+> src\orchestration\v1\lifecycle\lifecycle.service.ts:24: return updateLifecycleCheckpoint(goalId,{
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:25:  ...input,
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:26:  stage,
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:27:  status:stage==="completed"?"completed":input.status??"running",
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:28:  error:null,
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:29:  completed:stage==="completed"
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:30: });
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:31:}
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:32:
+> src\orchestration\v1\lifecycle\lifecycle.service.ts:33:export function failAutonomousLifecycle(goalId:string,error:unknown){
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:34: const message=error instanceof Error?error.message:String(error);
+> src\orchestration\v1\lifecycle\lifecycle.service.ts:35: return updateLifecycleCheckpoint(goalId,{
+> src\orchestration\v1\lifecycle\lifecycle.service.ts:36:  status:"failed",
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:37:  error:message
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:38: });
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:39:}
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:40:
+> src\orchestration\v1\lifecycle\lifecycle.service.ts:41:export function autonomousLifecycleState(goalId:string){
+> src\orchestration\v1\lifecycle\lifecycle.service.ts:42: return lifecycleCheckpoint(goalId);
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:43:}
+
+
+
+
+--- LIFECYCLE REPOSITORY ---
+
+> src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:1:import{listRecoverableLifecycles,updateLifecycleCheckpoint}from"./lifecycle.repository.js";
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:2:import{goalExecutionState,synchronizeGoalExecution}from"../../../team/goal-team-execution.service.js";
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:3:import{recoverDevelopmentSession}from"../../../development/development-session.service.js";
+> src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:4:import{getDeliveryPlan,latestDeliveryPlan,setDeliveryPlanStatus}from"../../../delivery/delivery-plan.repository.js";
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:5:import{findDeliveryPublicationByPlan}from"../../../delivery/delivery-publication.repository.js";
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:6:import{deliveryVerificationForPlan}from"../../../delivery/delivery-verification.service.js";
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:7:import{findReleaseByPlan}from"../../../delivery/release-history.repository.js";
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:8:import{event}from"../../../core/telemetry.js";
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:9:import type{AutonomousLifecycleCheckpoint,AutonomousLifecycleStage,AutonomousLifecycleStatus}from"./lifecycle.types.js";
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:10:
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:11:function graphComplete(state:ReturnType<typeof goalExecutionState>){
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:12: return state.total>0&&state.completed===state.total;
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:13:}
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:14:
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:15:function deliveryPlanForLifecycle(lifecycle:AutonomousLifecycleCheckpoint){
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:16: if(lifecycle.deliveryPlanId){
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:42:   };
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:43:  }
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:44:  return{
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:45:   stage:"delivery" as AutonomousLifecycleStage,
+> src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:46:   status:"waiting" as AutonomousLifecycleStatus,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:47:   completed:false,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:48:   deliveryPlanId:null,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:49:   publicationId:null,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:50:   verificationId:null,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:51:   releaseId:null
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:52:  };
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:53: }
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:54: const publication=findDeliveryPublicationByPlan(plan.id);
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:55: if(!publication||publication.status!=="published"){
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:56:  return{
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:57:   stage:"delivery" as AutonomousLifecycleStage,
+> src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:58:   status:"waiting" as AutonomousLifecycleStatus,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:59:   completed:false,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:60:   deliveryPlanId:plan.id,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:61:   publicationId:publication?.id??null,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:62:   verificationId:null,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:63:   releaseId:null
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:64:  };
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:65: }
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:66: const verification=deliveryVerificationForPlan(plan.id);
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:67: if(!verification||!verification.verified||verification.status!=="verified"){
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:68:  return{
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:69:   stage:"verification" as AutonomousLifecycleStage,
+> src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:70:   status:"waiting" as AutonomousLifecycleStatus,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:71:   completed:false,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:72:   deliveryPlanId:plan.id,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:73:   publicationId:publication.id,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:74:   verificationId:verification?.id??null,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:75:   releaseId:null
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:76:  };
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:77: }
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:78: if(plan.status!=="delivered"){
+> src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:79:  setDeliveryPlanStatus(plan.id,"delivered");
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:80: }
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:81: const release=findReleaseByPlan(plan.id);
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:82: if(!release||release.status!=="released"){
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:83:  return{
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:84:   stage:"release" as AutonomousLifecycleStage,
+> src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:85:   status:"waiting" as AutonomousLifecycleStatus,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:86:   completed:false,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:87:   deliveryPlanId:plan.id,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:88:   publicationId:publication.id,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:89:   verificationId:verification.id,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:90:   releaseId:release?.id??null
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:91:  };
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:92: }
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:93: return{
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:94:  stage:"completed" as AutonomousLifecycleStage,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:95:  status:"completed" as AutonomousLifecycleStatus,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:96:  completed:true,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:97:  deliveryPlanId:plan.id,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:114:    synchronized=synchronizeGoalExecution(lifecycle.goalId);
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:115:   }
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:116:   const state=goalExecutionState(lifecycle.goalId);
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:117:   const authority=recoveryState(lifecycle,state);
+> src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:118:   const checkpoint=updateLifecycleCheckpoint(lifecycle.goalId,{
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:119:    ...authority,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:120:    error:null,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:121:    metadata:{
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:122:     ...lifecycle.metadata,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:123:     recoveredAt:new Date().toISOString(),
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:124:     totalWork:state.total,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:125:     completedWork:state.completed,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:126:     graphComplete:graphComplete(state),
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:127:     durableDeliveryState:hasDeliveryState,
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:128:     releaseAuthority:authority.completed
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:129:    }
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:130:   });
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:139:   });
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:140:   recovered.push({checkpoint,synchronized,state});
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:141:  }catch(error){
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:142:   const message=error instanceof Error?error.message:String(error);
+> src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:143:   updateLifecycleCheckpoint(lifecycle.goalId,{
+> src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:144:    status:"waiting",
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:145:    error:message
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:146:   });
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:147:  }
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:148: }
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:149: return recovered;
+  src\orchestration\v1\lifecycle\lifecycle-recovery.service.ts:150:}
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:94: );
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:95: return lifecycleCheckpoint(input.goalId)!;
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:96:}
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:97:
+> src\orchestration\v1\lifecycle\lifecycle.repository.ts:98:export function updateLifecycleCheckpoint(
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:99: goalId:string,
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:100: input:{
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:101:  stage?:AutonomousLifecycleStage;
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:102:  status?:AutonomousLifecycleStatus;
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:103:  taskId?:string|null;
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:104:  workItemId?:string|null;
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:105:  deliveryPlanId?:string|null;
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:106:  publicationId?:string|null;
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:107:  verificationId?:string|null;
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:108:  releaseId?:string|null;
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:109:  error?:string|null;
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:110:  metadata?:Record<string,any>;
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:114: const current=lifecycleCheckpoint(goalId);
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:115: if(!current)throw new Error(`Lifecycle checkpoint not found: ${goalId}`);
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:116: const time=now();
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:117: db.prepare(`
+> src\orchestration\v1\lifecycle\lifecycle.repository.ts:118:  UPDATE autonomous_lifecycle_checkpoints
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:119:  SET stage=?,
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:120:      status=?,
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:121:      task_id=?,
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:122:      work_item_id=?,
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:123:      delivery_plan_id=?,
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:124:      publication_id=?,
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:125:      verification_id=?,
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:126:      release_id=?,
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:127:      error=?,
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:128:      metadata_json=?,
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:129:      updated_at=?,
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:130:      completed_at=?
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:150:export function listRecoverableLifecycles(){
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:151: return(db.prepare(`
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:152:  SELECT *
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:153:  FROM autonomous_lifecycle_checkpoints
+> src\orchestration\v1\lifecycle\lifecycle.repository.ts:154:  WHERE status IN('running','waiting','delivering')
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:155:  ORDER BY updated_at,id
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:156: `).all() as any[]).map(map);
+  src\orchestration\v1\lifecycle\lifecycle.repository.ts:157:}
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:1:import{
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:2: ensureLifecycleCheckpoint,
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:3: lifecycleCheckpoint,
+> src\orchestration\v1\lifecycle\lifecycle.service.ts:4: updateLifecycleCheckpoint
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:5:}from"./lifecycle.repository.js";
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:6:
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:7:export function beginAutonomousLifecycle(input:{
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:8: projectId:string;
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:9: goalId:string;
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:10: taskId?:string|null;
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:11: workItemId?:string|null;
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:12:}){
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:13: return ensureLifecycleCheckpoint({
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:14:  ...input,
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:15:  stage:"development"
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:16: });
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:20: goalId:string,
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:21: stage:any,
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:22: input:Record<string,any>={}
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:23:){
+> src\orchestration\v1\lifecycle\lifecycle.service.ts:24: return updateLifecycleCheckpoint(goalId,{
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:25:  ...input,
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:26:  stage,
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:27:  status:stage==="completed"?"completed":input.status??"running",
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:28:  error:null,
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:29:  completed:stage==="completed"
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:30: });
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:31:}
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:32:
+> src\orchestration\v1\lifecycle\lifecycle.service.ts:33:export function failAutonomousLifecycle(goalId:string,error:unknown){
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:34: const message=error instanceof Error?error.message:String(error);
+> src\orchestration\v1\lifecycle\lifecycle.service.ts:35: return updateLifecycleCheckpoint(goalId,{
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:36:  status:"failed",
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:37:  error:message
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:38: });
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:39:}
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:40:
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:41:export function autonomousLifecycleState(goalId:string){
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:42: return lifecycleCheckpoint(goalId);
+  src\orchestration\v1\lifecycle\lifecycle.service.ts:43:}
+
+
+
+
+--- AI RECOVERY ---
+import {recoverActiveDevelopmentSessions} from "../development/development-lifecycle.service.js";
+import {db} from "../database/database.js";
+import {
+ AI_RECOVERY_INTERVAL_MS,
+ now
+} from "../config/config.js";
+import {event,setWorker} from "./telemetry.js";
+import {
+ aiProviderHealth,
+ getAIProvider
+} from "../agent/provider.service.js";
+import {
+ providerCircuitStatus
+} from "./provider-circuit.service.js";
+import {resumeTask} from "./task.service.js";
+import {recoverJobs} from "../jobs/job-recovery.service.js";
+import {enqueueTask} from "../jobs/job.service.js";
+
+let checking=false;
+let lastCheck=0;
+
+export function recoverInterruptedTasks(){
+ const result=recoverJobs();
+ const developmentSessions=recoverActiveDevelopmentSessions();
+ setWorker("online","idle");
+ return result.local+result.expired+result.reconciled;
+}
+
+export async function resumePausedAIJobs(){
+ if(checking)return;
+
+ const time=Date.now();
+
+ if(time-lastCheck<AI_RECOVERY_INTERVAL_MS)return;
+
+ const paused=db.prepare(
+  "SELECT * FROM tasks WHERE status='paused' AND phase='waiting_ai' ORDER BY updated_at ASC"
+ ).all() as any[];
+
+ if(!paused.length)return;
+
+ const provider=getAIProvider();
+ const before=providerCircuitStatus(provider.name);
+
+ if(
+  before.state==="open"&&
+  before.retryAt!==null&&
+  time<before.retryAt
+ ){
+  lastCheck=time;
+
+  event(
+   "ai.recovery.cooldown",
+   "AI recovery skipped while provider circuit is cooling down",
+   {
+    data:{
+     provider:provider.name,
+     paused:paused.length,
+     retryAt:new Date(before.retryAt).toISOString(),
+     remainingMs:before.retryAt-time
+    }
+   }
+  );
+
+  return;
+ }
+
+ checking=true;
+ lastCheck=time;
+
+ try{
+  event(
+   "ai.recovery.probe",
+   `Probing AI provider before resuming ${paused.length} paused task${paused.length===1?"":"s"}`,
+   {
+    data:{
+     provider:provider.name,
+     state:providerCircuitStatus(provider.name).state,
+     paused:paused.length
+    }
+   }
+  );
+
+  const health=await aiProviderHealth();
+  const after=providerCircuitStatus(provider.name);
+
+  if(!health.configured||after.state==="open"){
+   event(
+    "ai.recovery.wait",
+    "AI provider recovery probe failed",
+    {
+     level:"warn",
+     data:{
+      provider:provider.name,
+      model:health.model,
+      state:after.state,
+      failures:after.consecutiveFailures,
+      retryAt:after.retryAt
+       ?new Date(after.retryAt).toISOString()
+       :null
+     }
+    }
+   );
+
+   return;
+  }
+
+  let resumed=0;
+
+  for(const task of paused){
+   try{
+    resumeTask(
+     task.id,
+     "ai_provider_circuit_recovered"
+    );
+    resumed++;
+   }catch(error){
+    event(
+     "ai.recovery.task_error",
+     error instanceof Error
+      ?error.message
+      :String(error),
+     {
+      taskId:task.id,
+      projectId:task.project_id,
+      level:"warn"
+     }
+    );
+   }
+  }
+
+  event(
+   "ai.recovery.ready",
+   `AI provider recovered; ${resumed} task${resumed===1?"":"s"} requeued`,
+   {
+    data:{
+     provider:provider.name,
+     model:health.model,
+     state:providerCircuitStatus(provider.name).state,
+     count:resumed
+    }
+   }
+  );
+ }catch(error){
+  event(
+   "ai.recovery.error",
+   error instanceof Error
+    ?error.message
+    :String(error),
+   {level:"warn"}
+  );
+ }finally{
+  checking=false;
+ }
+}
+
+
+
+
+
+--- JOB RUNNER PROVIDER CATCH ---
+
+  src\jobs\job-runner.service.ts:241:      {
+  src\jobs\job-runner.service.ts:242:       jobId:job.id,
+  src\jobs\job-runner.service.ts:243:       taskId:job.task_id,
+  src\jobs\job-runner.service.ts:244:       projectId:job.project_id,
+  src\jobs\job-runner.service.ts:245:       component:"job-runner",
+  src\jobs\job-runner.service.ts:246:       level:"error",
+  src\jobs\job-runner.service.ts:247:       data:{
+  src\jobs\job-runner.service.ts:248:        slot,
+  src\jobs\job-runner.service.ts:249:        failureKind:classification.kind
+  src\jobs\job-runner.service.ts:250:       }
+  src\jobs\job-runner.service.ts:251:      }
+  src\jobs\job-runner.service.ts:252:     );
+  src\jobs\job-runner.service.ts:253:    }
+  src\jobs\job-runner.service.ts:254:   }
+  src\jobs\job-runner.service.ts:255:
+  src\jobs\job-runner.service.ts:256:   const current=db.prepare(
+  src\jobs\job-runner.service.ts:257:    "SELECT * FROM tasks WHERE id=?"
+  src\jobs\job-runner.service.ts:258:   ).get(job.task_id) as any;
+  src\jobs\job-runner.service.ts:259:
+  src\jobs\job-runner.service.ts:260:   currentJob=getJob(job.id)||currentJob;
+  src\jobs\job-runner.service.ts:261:
+  src\jobs\job-runner.service.ts:262:   const exhausted=
+  src\jobs\job-runner.service.ts:263:    currentJob.attempts>=currentJob.max_attempts;
+  src\jobs\job-runner.service.ts:264:
+  src\jobs\job-runner.service.ts:265:   if(
+> src\jobs\job-runner.service.ts:266:    classification.kind==="provider_retryable"||
+  src\jobs\job-runner.service.ts:267:    current?.status==="paused"
+  src\jobs\job-runner.service.ts:268:   ){
+  src\jobs\job-runner.service.ts:269:    pauseJob(job.id,message);
+  src\jobs\job-runner.service.ts:270:
+  src\jobs\job-runner.service.ts:271:    event(
+  src\jobs\job-runner.service.ts:272:     "job.provider_wait",
+  src\jobs\job-runner.service.ts:273:     `Job ${job.id} paused while waiting for provider`,
+  src\jobs\job-runner.service.ts:274:     {
+  src\jobs\job-runner.service.ts:275:      jobId:job.id,
+  src\jobs\job-runner.service.ts:276:      taskId:job.task_id,
+  src\jobs\job-runner.service.ts:277:      projectId:job.project_id,
+  src\jobs\job-runner.service.ts:278:      phase:"waiting_ai",
+  src\jobs\job-runner.service.ts:279:      component:"job-runner",
+  src\jobs\job-runner.service.ts:280:      level:"warn",
+  src\jobs\job-runner.service.ts:281:      data:{
+  src\jobs\job-runner.service.ts:282:       slot,
+  src\jobs\job-runner.service.ts:283:       failureKind:classification.kind,
+  src\jobs\job-runner.service.ts:284:       attempt:currentJob.attempts,
+  src\jobs\job-runner.service.ts:285:       maxAttempts:currentJob.max_attempts
+  src\jobs\job-runner.service.ts:286:      }
+  src\jobs\job-runner.service.ts:287:     }
+  src\jobs\job-runner.service.ts:288:    );
+  src\jobs\job-runner.service.ts:289:   }else if(
+  src\jobs\job-runner.service.ts:290:    classification.kind==="provider_permanent"||
+  src\jobs\job-runner.service.ts:291:    classification.terminal||
+  src\jobs\job-runner.service.ts:292:    exhausted
+  src\jobs\job-runner.service.ts:293:   ){
+  src\jobs\job-runner.service.ts:294:    const terminalMessage=exhausted
+  src\jobs\job-runner.service.ts:295:     ?`${message}; maximum execution attempts reached`
+  src\jobs\job-runner.service.ts:296:     :message;
+  src\jobs\job-runner.service.ts:297:
+  src\jobs\job-runner.service.ts:298:    failJob(job.id,terminalMessage);
+  src\jobs\job-runner.service.ts:299:
+  src\jobs\job-runner.service.ts:300:
+  src\jobs\job-runner.service.ts:301:    if(isGoalManagedTask(job.task_id)){
+  src\jobs\job-runner.service.ts:302:     const time=new Date().toISOString();
+  src\jobs\job-runner.service.ts:303:
+  src\jobs\job-runner.service.ts:304:     db.prepare(`
+  src\jobs\job-runner.service.ts:305:      UPDATE tasks
+  src\jobs\job-runner.service.ts:306:      SET status='failed',phase='failed',error=?,updated_at=?
+  src\jobs\job-runner.service.ts:307:      WHERE id=?
+  src\jobs\job-runner.service.ts:308:     `).run(
+  src\jobs\job-runner.service.ts:309:      terminalMessage,
+  src\jobs\job-runner.service.ts:310:      time,
+  src\jobs\job-runner.service.ts:311:      job.task_id
+  src\jobs\job-runner.service.ts:312:     );
+  src\jobs\job-runner.service.ts:313:
+  src\jobs\job-runner.service.ts:314:     failGoalTaskExecution(job.task_id,"failed");
+  src\jobs\job-runner.service.ts:315:     synchronizeTaskDevelopment(job.task_id);
+  src\jobs\job-runner.service.ts:316:
+  src\jobs\job-runner.service.ts:317:    }else if(current?.status!=="failed"){
+  src\jobs\job-runner.service.ts:318:     const time=new Date().toISOString();
+  src\jobs\job-runner.service.ts:319:
+  src\jobs\job-runner.service.ts:320:     db.prepare(`
+  src\jobs\job-runner.service.ts:321:      UPDATE tasks
+  src\jobs\job-runner.service.ts:383:    );
+  src\jobs\job-runner.service.ts:384:   }else{
+  src\jobs\job-runner.service.ts:385:    failJob(job.id,message);
+  src\jobs\job-runner.service.ts:386:   }
+  src\jobs\job-runner.service.ts:387:
+  src\jobs\job-runner.service.ts:388:   logger.error(
+  src\jobs\job-runner.service.ts:389:    message,
+  src\jobs\job-runner.service.ts:390:    {...context,operation:"execute"},
+  src\jobs\job-runner.service.ts:391:    {
+  src\jobs\job-runner.service.ts:392:     slot,
+  src\jobs\job-runner.service.ts:393:     owner,
+  src\jobs\job-runner.service.ts:394:     failureKind:classification.kind,
+  src\jobs\job-runner.service.ts:395:     durationMs:Date.now()-started
+  src\jobs\job-runner.service.ts:396:    },
+  src\jobs\job-runner.service.ts:397:    error
+  src\jobs\job-runner.service.ts:398:   );
+  src\jobs\job-runner.service.ts:399:
+  src\jobs\job-runner.service.ts:400:   event(
+  src\jobs\job-runner.service.ts:401:    "job.execution_error",
+  src\jobs\job-runner.service.ts:402:    message,
+  src\jobs\job-runner.service.ts:403:    {
+  src\jobs\job-runner.service.ts:404:     jobId:job.id,
+  src\jobs\job-runner.service.ts:405:     taskId:job.task_id,
+  src\jobs\job-runner.service.ts:406:     projectId:job.project_id,
+  src\jobs\job-runner.service.ts:407:     phase:
+> src\jobs\job-runner.service.ts:408:      classification.kind==="provider_retryable"
+  src\jobs\job-runner.service.ts:409:       ?"waiting_ai"
+  src\jobs\job-runner.service.ts:410:       :"failed",
+  src\jobs\job-runner.service.ts:411:     component:"job-runner",
+  src\jobs\job-runner.service.ts:412:     level:"error",
+  src\jobs\job-runner.service.ts:413:     data:{
+  src\jobs\job-runner.service.ts:414:      slot,
+  src\jobs\job-runner.service.ts:415:      owner,
+  src\jobs\job-runner.service.ts:416:      failureKind:classification.kind,
+  src\jobs\job-runner.service.ts:417:      attempt:currentJob.attempts,
+  src\jobs\job-runner.service.ts:418:      maxAttempts:currentJob.max_attempts,
+  src\jobs\job-runner.service.ts:419:      durationMs:Date.now()-started
+  src\jobs\job-runner.service.ts:420:     }
+  src\jobs\job-runner.service.ts:421:    }
+  src\jobs\job-runner.service.ts:422:   );
+  src\jobs\job-runner.service.ts:423:  }
+  src\jobs\job-runner.service.ts:424: }finally{
+  src\jobs\job-runner.service.ts:425:  clearInterval(heartbeat);
+  src\jobs\job-runner.service.ts:426:
+  src\jobs\job-runner.service.ts:427:  await cancelTaskSandboxes(
+  src\jobs\job-runner.service.ts:428:   job.task_id,
+  src\jobs\job-runner.service.ts:429:   "shutdown"
+  src\jobs\job-runner.service.ts:430:  ).catch(()=>{});
+  src\jobs\job-runner.service.ts:431:
+  src\jobs\job-runner.service.ts:432:  controls.delete(job.task_id);
+  src\jobs\job-runner.service.ts:433:  activeSlots.delete(slot);
+  src\jobs\job-runner.service.ts:434:  freeWorkerSlot(slot);
+  src\jobs\job-runner.service.ts:435:
+  src\jobs\job-runner.service.ts:436:  if(activeSlots.size===0){
+  src\jobs\job-runner.service.ts:437:   setWorker("online","idle");
+  src\jobs\job-runner.service.ts:438:  }
+  src\jobs\job-runner.service.ts:439: }
+  src\jobs\job-runner.service.ts:440:
+  src\jobs\job-runner.service.ts:441: return true;
+  src\jobs\job-runner.service.ts:442:}
+  src\jobs\job-runner.service.ts:443:
+  src\jobs\job-runner.service.ts:444:export function activeJobSlots(){
+  src\jobs\job-runner.service.ts:445: return [...activeSlots].sort((a,b)=>a-b);
+  src\jobs\job-runner.service.ts:446:}
+  src\jobs\job-runner.service.ts:447:
+  src\jobs\job-runner.service.ts:448:export function activeJobCount(){
+  src\jobs\job-runner.service.ts:449: return activeSlots.size;
+  src\jobs\job-runner.service.ts:450:}
+  src\jobs\job-runner.service.ts:451:
+  src\jobs\job-runner.service.ts:452:
+  src\jobs\job-runner.service.ts:453:
+  src\jobs\job-runner.service.ts:454:
+  src\jobs\job-runner.service.ts:455:
+
+
+
+
+============================================================
+Capture complete
+Production changes: NONE
+Trial project preserved: prj_59e5737b2866ea25
+============================================================

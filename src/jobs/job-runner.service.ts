@@ -1,14 +1,17 @@
+import {synchronizeTaskDevelopment} from "../development/development-lifecycle.service.js";
 import {JOB_HEARTBEAT_MS,JOB_RETRY_BASE_MS} from "../config/config.js";
 import {db} from "../database/database.js";
 import {event,setWorker} from "../core/telemetry.js";
 import {executeTask,failTask} from "../core/task.service.js";
 import {TaskControlError,assertTaskRunnable} from "../core/task-control.service.js";
 import {cancelTaskSandboxes} from "../sandbox/sandbox-manager.service.js";
-import {claimNextJob,completeJob,heartbeatJob,pauseJob,requeueJob,failJob,getJob,consumeJobAttempt} from "./job.repository.js";
+import {claimNextJob,completeJob,heartbeatJob,pauseJob,requeueJob,failJob,getJob,consumeJobAttempt,extendJobForAutonomousRecovery} from "./job.repository.js";
 import {occupyWorkerSlot,pulseWorkerSlot,freeWorkerSlot} from "../workers/worker-slot.service.js";
 import {runtimeOwner,RUNTIME_ID} from "../runtime/runtime-instance.service.js";
 import {logger} from "../logging/logger.service.js";
 import {classifyJobFailure} from "./job-failure-classifier.service.js";
+import {isGoalManagedTask,failGoalTaskExecution} from "../team/goal-team-execution.service.js";
+import {executeGoalTeamTask} from "../team/goal-role-executor.service.js";
 
 const activeSlots=new Set<number>();
 const controls=new Map<string,{cancelled:boolean;paused:boolean}>();
@@ -17,6 +20,28 @@ function errorMessage(error:unknown){
  return error instanceof Error?error.message:String(error);
 }
 
+function recoverableTeamRepair(taskId:string){
+ const row=db.prepare(`
+  SELECT tr.id,tr.status,tr.attempts,tr.max_attempts
+  FROM team_recoveries tr
+  JOIN goal_work_dispatches gwd ON gwd.work_item_id=tr.work_item_id
+  WHERE gwd.task_id=?
+  ORDER BY tr.updated_at DESC
+  LIMIT 1
+ `).get(taskId) as any;
+ if(!row)return null;
+ const status=String(row.status||"");
+ const attempts=Number(row.attempts||0);
+ const maxAttempts=Number(row.max_attempts||0);
+ if(["recovered","failed","blocked","exhausted"].includes(status))return null;
+ if(attempts>=maxAttempts)return null;
+ return{
+  id:String(row.id),
+  status,
+  attempts,
+  maxAttempts
+ };
+}
 function retryDelay(attempts:number){
  return Math.min(
   300000,
@@ -153,8 +178,20 @@ export async function runJobSlot(slot:number){
    throw new Error(`Task ${job.task_id} not found.`);
   }
 
-  await executeTask(task);
+  const goalManaged=isGoalManagedTask(task.id);
+
+  if(goalManaged){
+
+   await executeGoalTeamTask(task);
+
+  }else{
+
+   await executeTask(task);
+
+  }
+
   assertControl(job.task_id);
+
   completeJob(job.id,owner);
 
   event(
@@ -272,7 +309,49 @@ export async function runJobSlot(slot:number){
      }
     );
    }else if(
-    classification.kind==="provider_permanent"||
+        exhausted&&
+        isGoalManagedTask(job.task_id)&&
+        recoverableTeamRepair(job.task_id)
+      ){
+        const recovery=recoverableTeamRepair(job.task_id)!;
+        const extended=extendJobForAutonomousRecovery(job.id,1);
+        const time=new Date().toISOString();
+   
+        db.prepare(`
+         UPDATE tasks
+         SET status='queued',phase='recovering',error=NULL,updated_at=?
+         WHERE id=?
+        `).run(time,job.task_id);
+   
+        db.prepare(`
+         UPDATE projects
+         SET status='active',phase='autonomous_development',updated_at=?
+         WHERE id=?
+        `).run(time,job.project_id);
+   
+        event(
+         "job.autonomous_recovery_extended",
+         `Extended ${job.id} because autonomous team recovery still has repair budget`,
+         {
+          jobId:job.id,
+          taskId:job.task_id,
+          projectId:job.project_id,
+          phase:"recovering",
+          component:"job-runner",
+          level:"warn",
+          data:{
+           recoveryId:recovery.id,
+           repairAttempts:recovery.attempts,
+           repairMaxAttempts:recovery.maxAttempts,
+           attempts:extended?.attempts??currentJob.attempts,
+           maxAttempts:extended?.max_attempts??currentJob.max_attempts
+          }
+         }
+        );
+   
+        currentJob=extended||currentJob;
+       }else if(
+        classification.kind==="provider_permanent"||
     classification.terminal||
     exhausted
    ){
@@ -282,7 +361,24 @@ export async function runJobSlot(slot:number){
 
     failJob(job.id,terminalMessage);
 
-    if(current?.status!=="failed"){
+
+    if(isGoalManagedTask(job.task_id)){
+     const time=new Date().toISOString();
+
+     db.prepare(`
+      UPDATE tasks
+      SET status='failed',phase='failed',error=?,updated_at=?
+      WHERE id=?
+     `).run(
+      terminalMessage,
+      time,
+      job.task_id
+     );
+
+     failGoalTaskExecution(job.task_id,"failed");
+     synchronizeTaskDevelopment(job.task_id);
+
+    }else if(current?.status!=="failed"){
      const time=new Date().toISOString();
 
      db.prepare(`
@@ -416,6 +512,10 @@ export function activeJobSlots(){
 export function activeJobCount(){
  return activeSlots.size;
 }
+
+
+
+
 
 
 

@@ -30,10 +30,12 @@ import {releaseRuntimeJobs} from "./jobs/job-recovery.service.js";
 import {cancelAllSandboxes} from "./sandbox/sandbox-manager.service.js";
 import {logger} from "./logging/logger.service.js";
 import {cleanupLogs,logStorageStatus} from "./logging/log-storage.service.js";
+import {recoverV1AutonomousStartup} from "./orchestration/v1/lifecycle/lifecycle-startup.service.js";
 
 registerRuntime();
 recoverInterruptedTasks();
 initializeWorkerSlots();
+await recoverV1AutonomousStartup();
 startRuntimeHeartbeat();
 
 try{cleanupLogs()}catch{}
@@ -341,5 +343,6 @@ process.on("uncaughtException",error=>{
 process.on("unhandledRejection",error=>{
  fatal("unhandledRejection",error);
 });
+
 
 

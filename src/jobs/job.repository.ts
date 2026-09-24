@@ -66,6 +66,27 @@ export function consumeJobAttempt(jobId:string,workerId:string){
  `).run(time,jobId,workerId);
  return Number(result.changes)===1?getJob(jobId):null;
 }
+export function extendJobForAutonomousRecovery(jobId:string,additionalAttempts=1){
+ const current=job(jobId);
+ if(!current)return undefined;
+ const amount=Math.max(1,Math.min(3,Math.trunc(additionalAttempts)));
+ const time=now();
+ db.prepare(`
+  UPDATE jobs
+  SET max_attempts=max_attempts+?,
+      status='queued',
+      available_at=?,
+      claimed_by=NULL,
+      claimed_at=NULL,
+      lease_expires_at=NULL,
+      heartbeat_at=NULL,
+      last_error=NULL,
+      completed_at=NULL,
+      updated_at=?
+  WHERE id=? AND status NOT IN ('completed','cancelled')
+ `).run(amount,time,time,jobId);
+ return job(jobId);
+}
 export function heartbeatJob(jobId:string,workerId:string){
  const lease=new Date(Date.now()+JOB_LEASE_MS).toISOString(),time=now();
  const result=db.prepare("UPDATE jobs SET heartbeat_at=?,lease_expires_at=?,updated_at=? WHERE id=? AND status='running' AND claimed_by=?").run(time,lease,time,jobId,workerId);
@@ -213,6 +234,7 @@ export function queueStats(){
 export function listJobs(limit=200){
  return db.prepare("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?").all(limit) as unknown as JobRecord[];
 }
+
 
 
 
