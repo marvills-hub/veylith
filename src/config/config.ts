@@ -27,7 +27,7 @@ export const GITHUB_OWNER=process.env.GITHUB_OWNER?.trim()||"";
 export const GITHUB_VISIBILITY=(process.env.GITHUB_REPO_VISIBILITY==="public"?"public":"private") as "private"|"public";
 export const GITHUB_ENABLED=Boolean(GITHUB_TOKEN&&GITHUB_OWNER);
 export const now=()=>new Date().toISOString();
-export const AI_REQUEST_TIMEOUT_MS=90000;
+export const AI_REQUEST_TIMEOUT_MS=Math.max(30000,Number(process.env.AI_REQUEST_TIMEOUT_MS)||180000);
 export const AI_REQUEST_MAX_ATTEMPTS=2;
 export const AI_RETRY_BASE_DELAY_MS=2000;
 export const AI_HEALTH_TIMEOUT_MS=10000;
