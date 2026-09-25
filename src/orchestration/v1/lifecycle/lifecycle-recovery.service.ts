@@ -110,7 +110,7 @@ export function recoverAutonomousLifecycles(){
    const before=goalExecutionState(lifecycle.goalId);
    const hasDeliveryState=Boolean(deliveryPlanForLifecycle(lifecycle));
    let synchronized:null|ReturnType<typeof synchronizeGoalExecution>=null;
-   if(!graphComplete(before)&&!hasDeliveryState){
+   if(!hasDeliveryState){
     synchronized=synchronizeGoalExecution(lifecycle.goalId);
    }
    const state=goalExecutionState(lifecycle.goalId);
