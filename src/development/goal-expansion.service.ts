@@ -6,7 +6,7 @@ import type{
 }from"./goal-expansion.types.js";
 
 const kinds=new Set([
- "architecture","analysis","implementation","integration","test",
+ "architecture","analysis","implementation","integration","test","review",
  "documentation","delivery","other"
 ]);
 
@@ -184,5 +184,3 @@ export function expandGoalWorkGraph(
   totalWorkItems:work(goalId).length
  };
 }
-
-

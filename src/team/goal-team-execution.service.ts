@@ -1,4 +1,4 @@
-﻿import {db} from "../database/database.js";
+import {db} from "../database/database.js";
 import {now} from "../config/config.js";
 import {getProjectGoal} from "../goals/goal.repository.js";
 import {loadGoalTaskGraph,refreshGoalTaskReadiness} from "../goals/goal-task-graph.service.js";
@@ -21,6 +21,7 @@ import {
  setAgentAssignmentStatus
 } from "./team-assignment.repository.js";
 import {bindIncomingHandoffs} from "./handoff.service.js";
+import {ensureTerminalReviewDelivery} from "../orchestration/v1/continuation/terminal-continuation.service.js";
 
 export type GoalExecutionState={
  goalId:string;
@@ -188,6 +189,12 @@ export function completeGoalTaskExecution(taskId:string){
  }
  refreshGoalTaskReadiness(goal.id);
  synchronizeGoalTeam(goal.id);
+ const terminalContinuation=ensureTerminalReviewDelivery(goal.id);
+ if(terminalContinuation.created){
+  refreshGoalTaskReadiness(goal.id);
+  synchronizeGoalWorkDispatches(goal.id);
+  synchronizeGoalTeam(goal.id);
+ }
  const assignments=assignRunnableGoalTeam(goal.id);
  const dispatched=dispatchRunnableGoalWork(goal.id);
  for(const item of assignments){
@@ -199,6 +206,7 @@ export function completeGoalTaskExecution(taskId:string){
   workItemId:work.id,
   assignments,
   dispatched,
+  terminalContinuation,
   state
  };
 }
