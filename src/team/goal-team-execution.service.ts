@@ -237,13 +237,19 @@ export function synchronizeGoalExecution(goalId:string){
  synchronizeGoalWorkDispatches(goalId);
  refreshGoalTaskReadiness(goalId);
  synchronizeGoalTeam(goalId);
+ const terminalContinuation=ensureTerminalReviewDelivery(goalId);
+ if(terminalContinuation.created){
+  refreshGoalTaskReadiness(goalId);
+  synchronizeGoalWorkDispatches(goalId);
+  synchronizeGoalTeam(goalId);
+ }
  const assignments=assignRunnableGoalTeam(goalId);
  const dispatched=dispatchRunnableGoalWork(goalId);
  for(const item of assignments){
   try{bindIncomingHandoffs(item.workItemId,item.id);}catch{}
  }
  const state=updateProjectProgress(goalId);
- return{assignments,dispatched,state};
+ return{assignments,dispatched,terminalContinuation,state};
 }
 
 export function goalExecutionSnapshot(goalId:string){
