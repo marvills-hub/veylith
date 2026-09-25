@@ -1,6 +1,6 @@
 import {db} from "../database/database.js";
 import {now} from "../config/config.js";
-import {getProjectGoal} from "../goals/goal.repository.js";
+import {getProjectGoal,updateGoalStatus} from "../goals/goal.repository.js";
 import {loadGoalTaskGraph,refreshGoalTaskReadiness} from "../goals/goal-task-graph.service.js";
 import {updateGoalWorkStatus} from "../goals/goal-task-graph.repository.js";
 import {
@@ -89,6 +89,16 @@ export function goalExecutionState(goalId:string):GoalExecutionState{
   terminal,
   success:graph.items.length>0&&completed===graph.items.length
  };
+}
+
+function reactivateExpandedGoal(goalId:string){
+ const goal=getProjectGoal(goalId);
+ if(!goal)throw new Error(`Goal not found: ${goalId}`);
+ const state=goalExecutionState(goalId);
+ if(goal.status==="completed"&&!state.success){
+  return updateGoalStatus(goalId,"active");
+ }
+ return goal;
 }
 
 function updateProjectProgress(goalId:string){
@@ -243,6 +253,7 @@ export function synchronizeGoalExecution(goalId:string){
   synchronizeGoalWorkDispatches(goalId);
   synchronizeGoalTeam(goalId);
  }
+ reactivateExpandedGoal(goalId);
  const assignments=assignRunnableGoalTeam(goalId);
  const dispatched=dispatchRunnableGoalWork(goalId);
  for(const item of assignments){
