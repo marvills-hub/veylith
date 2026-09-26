@@ -1,3 +1,4 @@
+﻿import {recoverExhaustedTerminalRoles} from "../recovery/terminal-role-recovery.service.js";
 import{recoverAutonomousLifecycles}from"./lifecycle-recovery.service.js";
 import{event}from"../../../core/telemetry.js";
 import{logger}from"../../../logging/logger.service.js";
@@ -171,6 +172,7 @@ export function recoverExhaustedAutonomousRepairs(){
 }
 
 export async function recoverV1AutonomousStartup(){
+ const terminalRoleRecovery=recoverExhaustedTerminalRoles();
  if(startupRecoveryCompleted){
   return{skipped:true,recovered:0,repairJobsRecovered:0};
  }
@@ -213,3 +215,4 @@ export async function recoverV1AutonomousStartup(){
   startupRecoveryRunning=false;
  }
 }
+
