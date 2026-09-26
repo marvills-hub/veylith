@@ -1,7 +1,12 @@
-﻿process.env.DB_PATH=`data/v10-terminal-role-engine-recovery-${Date.now()}.db`;
+﻿process.env.DATABASE_PATH=`data/v10-terminal-role-engine-recovery-${Date.now()}.db`;
 process.env.AI_PROVIDER="none";
 
 const {db}=await import("../src/database/database.js");
+await import("../src/goals/goal.repository.js");
+await import("../src/goals/goal-task-graph.repository.js");
+await import("../src/goals/goal-work-dispatch.repository.js");
+await import("../src/orchestration/v1/lifecycle/lifecycle.repository.js");
+await import("../src/team/goal-role-executor.service.js");
 const {
  recoverExhaustedTerminalRole
 }=await import("../src/orchestration/v1/recovery/terminal-role-recovery.service.js");
@@ -262,4 +267,6 @@ try{
 }finally{
  try{db.close()}catch{}
 }
+
+
 

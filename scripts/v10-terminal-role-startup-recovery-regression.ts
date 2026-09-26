@@ -6,10 +6,15 @@ for(const suffix of ["","-wal","-shm"]){
  try{fs.rmSync(`${dbPath}${suffix}`,{force:true});}catch{}
 }
 
-process.env.DB_PATH=dbPath;
+process.env.DATABASE_PATH=dbPath;
 process.env.AI_PROVIDER="none";
 
 const {db}=await import("../src/database/database.js");
+await import("../src/goals/goal.repository.js");
+await import("../src/goals/goal-task-graph.repository.js");
+await import("../src/goals/goal-work-dispatch.repository.js");
+await import("../src/orchestration/v1/lifecycle/lifecycle.repository.js");
+await import("../src/team/goal-role-executor.service.js");
 const {
  recoverExhaustedTerminalRoles
 }=await import("../src/orchestration/v1/recovery/terminal-role-recovery.service.js");
@@ -270,3 +275,5 @@ try{
   try{fs.rmSync(`${dbPath}${suffix}`,{force:true});}catch{}
  }
 }
+
+
