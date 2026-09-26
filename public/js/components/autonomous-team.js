@@ -1,4 +1,5 @@
 ﻿import {$,escapeHtml,statusClass} from "../core/utils.js";
+import {createVeylithScene} from "../scene/veylith-scene.js";
 
 const agentIcon={
  architect:"ARC",
@@ -11,6 +12,8 @@ const agentIcon={
  versioning:"GIT",
  publisher:"PUB"
 };
+
+let scenePromise=null;
 
 function stateLabel(state){
  if(state==="working")return"WORKING";
@@ -27,8 +30,21 @@ function teamFor(data){
   null;
 }
 
+async function renderScene(team){
+ const root=$("veylithScene");
+ if(!root)return;
+ try{
+  scenePromise??=createVeylithScene(root);
+  const scene=await scenePromise;
+  scene.setTeam(team);
+ }catch(error){
+  console.error("Veylith 3D scene failed",error);
+ }
+}
+
 export function renderAutonomousTeam(data){
  const team=teamFor(data);
+ renderScene(team);
 
  if(!team){
   $("teamProject").textContent="NO ACTIVE PROJECT";
@@ -65,7 +81,7 @@ export function renderAutonomousTeam(data){
   </div>`;
 
  $("agentTeam").innerHTML=(team.team||[]).map(member=>`
-  <div class="agent-row">
+  <div class="agent-row ${statusClass(member.state)}">
    <div class="agent-avatar ${statusClass(member.state)}">${escapeHtml(agentIcon[member.id]||"AI")}</div>
    <div class="agent-copy">
     <strong>${escapeHtml(member.name)}</strong>

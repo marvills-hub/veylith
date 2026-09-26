@@ -6,161 +6,152 @@
 <title>Veylith Control Center</title>
 <link rel="stylesheet" href="/css/app.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script type="importmap">
+{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}
+</script>
 </head>
 <body>
 <div class="app">
-<header class="topbar">
+<div class="command-shell">
+<div class="identity">
 <div class="brand">VEY<span>LITH</span></div>
-<div class="connection"><span class="status-dot" id="systemDot"></span><span id="systemStatus">CONNECTING</span></div>
-</header>
-<div class="layout">
-<aside class="sidebar">
-<div class="nav-title">CONTROL CENTER</div>
-<div class="nav active">Overview</div>
-<div class="nav">Workers</div>
-<div class="nav">Projects</div>
-<div class="nav">Tasks</div>
-<div class="nav">Activity</div>
-<div class="nav-title">OPERATIONS</div>
-<div class="nav">AI Providers</div>
-<div class="nav">Git / GitHub</div>
-<div class="nav">Security</div>
-<div class="nav">Logs</div>
-</aside>
-<main class="content">
-<div class="headline">
-<div><h1>System Overview</h1><p>Live autonomous development control center</p></div>
-<div class="actions"><button class="btn" id="demo">RUN DEMO</button><button class="btn primary" id="newTask">+ DEVELOPMENT TASK</button></div>
+<div class="identity-sub">AUTONOMOUS DEVELOPMENT SYSTEM</div>
 </div>
-<section class="stats">
-<div class="stat"><div class="stat-label">Workers</div><div class="stat-value red" id="workersCount">0</div></div>
-<div class="stat"><div class="stat-label">Running</div><div class="stat-value" id="running">0</div></div>
-<div class="stat"><div class="stat-label">Queued</div><div class="stat-value" id="queued">0</div></div>
-<div class="stat"><div class="stat-label">Paused</div><div class="stat-value" id="paused">0</div></div>
-<div class="stat"><div class="stat-label">Completed</div><div class="stat-value" id="completed">0</div></div>
-<div class="stat"><div class="stat-label">Failed</div><div class="stat-value" id="failed">0</div></div>
-</section>
-<section class="grid">
-<div class="panel span12">
-<div class="panel-title"><span>Autonomous Development Team</span><span id="teamProject">NO ACTIVE PROJECT</span></div>
-<div id="currentAgent"></div>
-<div class="team-layout">
-<div>
-<div class="sub-title">AI DEVELOPERS</div>
+<div class="command-actions">
+<button class="hud-button" id="demo">RUN DEMO</button>
+<button class="hud-button primary" id="newTask">+ DEVELOPMENT TASK</button>
+<div class="system-link"><span class="status-dot" id="systemDot"></span><span id="systemStatus">CONNECTING</span></div>
+</div>
+
+<section class="command-stage">
+<div class="hud-panel agent-performance">
+<div class="hud-title"><span>AGENT PERFORMANCE</span><b id="workerCount">0 SLOTS</b></div>
 <div class="agent-team" id="agentTeam"></div>
 </div>
-<div>
-<div class="sub-title">DEVELOPMENT PIPELINE</div>
+
+<div class="hud-panel project-progress">
+<div class="hud-title"><span>PROJECT PROGRESS</span><b id="projectCount">0 PROJECTS</b></div>
+<div class="projects" id="projects"></div>
+</div>
+
+<div class="hud-panel activity-panel">
+<div class="hud-title"><span>AGENT ACTIVITY</span><b id="eventCount">LIVE</b></div>
+<div class="feed" id="feed"></div>
+</div>
+
+<div class="hud-panel task-panel">
+<div class="hud-title"><span>CURRENT TASK</span><b id="taskCount">0 TASKS</b></div>
+<div class="task-list" id="taskList"></div>
+</div>
+
+<div class="veylith-center">
+<div class="center-radiance"></div>
+<div class="scene-ring ring-one"></div>
+<div class="scene-ring ring-two"></div>
+<div class="scene-ring ring-three"></div>
+<div id="veylithScene"></div>
+<div class="center-status">
+<span>ACTIVE PROJECT</span>
+<strong id="teamProject">NO ACTIVE PROJECT</strong>
+<div id="currentAgent"></div>
+</div>
+</div>
+
+<div class="pipeline-zone">
+<div class="hud-title"><span>DEVELOPMENT PIPELINE</span><b>AUTONOMOUS FLOW</b></div>
 <div class="pipeline" id="pipeline"></div>
 </div>
+
+<div class="micro-rail rail-left">
+<div class="micro-title">RUNTIME</div>
+<div class="micro-item"><span>WORKERS</span><b id="workersCount">0</b></div>
+<div class="micro-item"><span>RUNNING</span><b id="running">0</b></div>
+<div class="micro-item"><span>QUEUED</span><b id="queued">0</b></div>
+<div class="micro-item"><span>PAUSED</span><b id="paused">0</b></div>
+<div class="micro-item"><span>DONE</span><b id="completed">0</b></div>
+<div class="micro-item"><span>FAILED</span><b id="failed">0</b></div>
+</div>
+
+<div class="micro-rail rail-right">
+<div class="micro-title">SYSTEM</div>
+<div class="micro-item"><span>AI</span><b id="aiState">...</b></div>
+<div class="micro-item"><span>SANDBOX</span><b id="sandboxState">...</b></div>
+<div class="micro-item"><span>SECURITY</span><b id="securityState">...</b></div>
+<div class="micro-item"><span>QUEUE</span><b id="queueState">...</b></div>
+<div class="micro-item"><span>CPU</span><b id="cpuText">0%</b></div>
+<div class="micro-item"><span>MEM</span><b id="memoryText">0%</b></div>
+</div>
+</section>
+
+<section class="telemetry-strip">
+<div class="tiny-chart"><span>CPU</span><canvas id="cpuChart"></canvas></div>
+<div class="tiny-chart"><span>MEMORY</span><canvas id="memoryChart"></canvas></div>
+<div class="telemetry-slot"><span>CONNECTION</span><b class="connection-badge offline" id="connectionBadge">OFFLINE</b></div>
+<div class="telemetry-slot wide"><span>RUNTIME</span><b id="connectionText">CONNECTING TO VEYLITH</b><small id="connectionDetail">LAST API RESPONSE NEVER</small></div>
+<div class="telemetry-slot"><span>LOGS</span><b id="logTotal">0</b></div>
+<div class="telemetry-slot"><span>WARN</span><b id="logWarnings">0</b></div>
+<div class="telemetry-slot"><span>ERRORS</span><b id="logErrors">0</b></div>
+<div class="telemetry-slot"><span>PROVIDER</span><b id="activeProvider">...</b></div>
+<div class="telemetry-slot"><span>MODEL</span><b id="activeModel">...</b></div>
+</section>
+
+<section class="detail-deck">
+<div class="detail-grid">
+<div class="detail-panel">
+<div class="hud-title"><span>WORKER SLOTS</span><b>LIVE</b></div>
+<div class="workers" id="workers"></div>
+</div>
+<div class="detail-panel">
+<div class="hud-title"><span>AI CIRCUITS</span><b>PROVIDERS</b></div>
+<div id="circuits"></div>
+</div>
+<div class="detail-panel terminal-panel">
+<div class="hud-title"><span>EXECUTION STREAM</span><b>TERMINAL</b></div>
+<div class="terminal" id="terminal">Waiting for Veylith...</div>
 </div>
 </div>
-<div class="panel span12">
-<div class="panel-title"><span>Runtime Health</span><span>LIVE</span></div>
-<div class="health-grid">
-<div class="health-card"><div class="health-label">AI Provider</div><div class="health-value" id="aiState">LOADING</div></div>
-<div class="health-card"><div class="health-label">Sandbox</div><div class="health-value" id="sandboxState">LOADING</div></div>
-<div class="health-card"><div class="health-label">Security</div><div class="health-value" id="securityState">LOADING</div></div>
-<div class="health-card"><div class="health-label">Queue</div><div class="health-value" id="queueState">LOADING</div></div>
-</div>
-</div>
-<div class="panel span3"><div class="panel-title"><span>CPU Load</span><span id="cpuText">0%</span></div><div class="chart"><canvas id="cpuChart"></canvas></div></div>
-<div class="panel span3"><div class="panel-title"><span>Memory</span><span id="memoryText">0%</span></div><div class="chart"><canvas id="memoryChart"></canvas></div></div>
-<div class="panel span3"><div class="panel-title"><span>Workers</span><span id="workerCount">0 SLOTS</span></div><div class="workers" id="workers"></div></div>
-<div class="panel span3"><div class="panel-title"><span>AI Circuits</span><span>PROVIDERS</span></div><div id="circuits"></div></div>
-<div class="panel span5"><div class="panel-title"><span>Projects</span><span id="projectCount">0 PROJECTS</span></div><div class="projects" id="projects"></div></div>
-<div class="panel span7"><div class="panel-title"><span>Task Operations</span><span id="taskCount">0 TASKS</span></div><div class="task-list" id="taskList"></div></div>
-<div class="panel span8"><div class="panel-title"><span>Live Veylith Activity</span><span id="eventCount">EVENT STREAM</span></div><div class="feed" id="feed"></div></div>
-<div class="panel span4"><div class="panel-title"><span>Execution Stream</span><span>TERMINAL</span></div><div class="terminal" id="terminal">Waiting for Veylith...</div></div>
-<div class="panel span12" id="connectionHealth">
-<div class="panel-title">
-<span>Runtime Connection</span>
-<span class="connection-badge offline" id="connectionBadge">OFFLINE</span>
-</div>
+
+<div class="detail-panel connection-detail" id="connectionHealth">
+<div class="hud-title"><span>RUNTIME CONNECTION</span><b>WORKER HEARTBEATS</b></div>
 <div class="connection-overview">
-<div class="connection-main">
-<div class="connection-pulse"><span></span></div>
-<div>
-<strong id="connectionText">CONNECTING TO VEYLITH</strong>
-<span id="connectionDetail">LAST API RESPONSE NEVER</span>
+<div class="connection-main"><div class="connection-pulse"><span></span></div><div><strong>VEYlITH NETWORK</strong><span>REAL-TIME AUTONOMOUS CONNECTION</span></div></div>
+<div class="connection-legend"><span><i class="live"></i>LIVE</span><span><i class="reconnecting"></i>RECONNECTING</span><span><i class="stale"></i>STALE</span><span><i class="offline"></i>OFFLINE</span></div>
 </div>
+<div class="connection-workers" id="connectionWorkers"><div class="empty">Waiting for worker heartbeat data.</div></div>
 </div>
-<div class="connection-legend">
-<span><i class="live"></i>LIVE</span>
-<span><i class="reconnecting"></i>RECONNECTING</span>
-<span><i class="stale"></i>STALE</span>
-<span><i class="offline"></i>OFFLINE</span>
-</div>
-</div>
-<div class="sub-title">WORKER HEARTBEATS</div>
-<div class="connection-workers" id="connectionWorkers">
-<div class="empty">Waiting for worker heartbeat data.</div>
-</div>
-</div>
-<div class="panel span12" id="publicationCenter">
-<div class="panel-title">
-<span>Git / GitHub Publication</span>
-<span id="publicationProject">NO PUBLICATION</span>
-</div>
+
+<div class="detail-panel" id="publicationCenter">
+<div class="hud-title"><span>GIT / GITHUB PUBLICATION</span><b id="publicationProject">NO PUBLICATION</b></div>
 <div id="publicationState"></div>
 <div class="publication-layout">
-<div>
-<div class="sub-title">PUBLICATION PIPELINE</div>
-<div class="publication-pipeline" id="publicationPipeline"></div>
-</div>
-<div>
-<div class="sub-title">REPOSITORY STATE</div>
-<div class="publication-meta" id="publicationMeta"></div>
-</div>
+<div><div class="sub-title">PUBLICATION PIPELINE</div><div class="publication-pipeline" id="publicationPipeline"></div></div>
+<div><div class="sub-title">REPOSITORY STATE</div><div class="publication-meta" id="publicationMeta"></div></div>
 </div>
 <div class="error-box publication-error" id="publicationError"></div>
 </div>
-<div class="panel span12" id="operationsCenter">
-<div class="panel-title">
-<span>Operations Center</span>
-<button class="mini-btn" id="opsRefresh">REFRESH</button>
-</div>
+
+<div class="detail-panel" id="operationsCenter">
+<div class="hud-title"><span>OPERATIONS CENTER</span><button class="mini-btn" id="opsRefresh">REFRESH</button></div>
 <div class="operations-summary">
-<div class="ops-card"><span>Logs</span><strong id="logTotal">0</strong></div>
-<div class="ops-card"><span>Warnings</span><strong class="warn" id="logWarnings">0</strong></div>
-<div class="ops-card"><span>Errors</span><strong class="bad" id="logErrors">0</strong></div>
 <div class="ops-card"><span>Security</span><strong class="ops-value" id="securityMode">LOADING</strong></div>
 <div class="ops-card"><span>Sandbox</span><strong class="ops-value" id="sandboxMode">LOADING</strong></div>
 <div class="ops-card"><span>Isolation</span><strong class="ops-value" id="isolationMode">LOADING</strong></div>
-<div class="ops-card"><span>AI Provider</span><strong class="ops-value" id="activeProvider">LOADING</strong></div>
-<div class="ops-card"><span>Model</span><strong class="ops-value" id="activeModel">LOADING</strong></div>
 </div>
 <div class="operations-grid">
 <div class="operations-block">
-<div class="operations-head">
-<span>STRUCTURED LOGS</span>
-<select id="logLevel">
-<option value="">ALL LEVELS</option>
-<option value="debug">DEBUG</option>
-<option value="info">INFO</option>
-<option value="warn">WARN</option>
-<option value="error">ERROR</option>
-<option value="fatal">FATAL</option>
-</select>
-</div>
+<div class="operations-head"><span>STRUCTURED LOGS</span><select id="logLevel"><option value="">ALL LEVELS</option><option value="debug">DEBUG</option><option value="info">INFO</option><option value="warn">WARN</option><option value="error">ERROR</option><option value="fatal">FATAL</option></select></div>
 <div class="ops-logs" id="opsLogs"><div class="empty">Loading logs...</div></div>
 </div>
 <div class="operations-side">
-<div class="operations-block">
-<div class="operations-head"><span>AI PROVIDERS</span></div>
-<div id="providerList"><div class="empty">Loading providers...</div></div>
-</div>
-<div class="operations-block">
-<div class="operations-head"><span>SECURITY EVENTS</span></div>
-<div class="security-events" id="securityEvents"><div class="empty">Loading security events...</div></div>
-</div>
+<div class="operations-block"><div class="operations-head"><span>AI PROVIDERS</span></div><div id="providerList"><div class="empty">Loading providers...</div></div></div>
+<div class="operations-block"><div class="operations-head"><span>SECURITY EVENTS</span></div><div class="security-events" id="securityEvents"><div class="empty">Loading security events...</div></div></div>
 </div>
 </div>
 </div>
 </section>
-</main>
 </div>
 </div>
+
 <div class="modal" id="modal">
 <form class="dialog" id="taskForm">
 <h2>Create Development Task</h2>
@@ -169,22 +160,12 @@
 <div class="dialog-actions"><button type="button" class="btn" id="cancel">CANCEL</button><button class="btn primary" id="submitTask">QUEUE TASK</button></div>
 </form>
 </div>
+
 <div class="control-overlay" id="taskControl">
 <div class="control-panel">
-<div class="control-head">
-<div>
-<h2 id="controlTaskName">Task</h2>
-<div class="control-id" id="controlTaskId"></div>
-</div>
-<button class="close-control" id="closeTaskControl">×</button>
-</div>
-<div class="control-status">
-<span class="status large" id="controlStatus">UNKNOWN</span>
-<strong id="controlProgressText">0%</strong>
-</div>
-<div class="control-progress">
-<div class="progress"><span id="controlProgressBar" style="width:0%"></span></div>
-</div>
+<div class="control-head"><div><h2 id="controlTaskName">Task</h2><div class="control-id" id="controlTaskId"></div></div><button class="close-control" id="closeTaskControl">×</button></div>
+<div class="control-status"><span class="status large" id="controlStatus">UNKNOWN</span><strong id="controlProgressText">0%</strong></div>
+<div class="control-progress"><div class="progress"><span id="controlProgressBar" style="width:0%"></span></div></div>
 <div class="control-grid">
 <div class="control-card"><div class="control-label">Current Phase</div><div class="control-value" id="controlPhase">—</div></div>
 <div class="control-card"><div class="control-label">Worker</div><div class="control-value" id="controlWorker">—</div></div>
@@ -193,30 +174,11 @@
 <div class="control-card"><div class="control-label">Repairs</div><div class="control-value" id="controlRepairs">0</div></div>
 </div>
 <div class="error-box" id="controlErrorBox"><span id="controlError"></span></div>
-<div class="control-section">
-<div class="control-section-title">Execution Controls</div>
-<div class="control-buttons">
-<button class="btn" id="pauseTask">PAUSE</button>
-<button class="btn success" id="resumeTask">RESUME</button>
-<button class="btn danger" id="cancelTask">CANCEL</button>
+<div class="control-section"><div class="control-section-title">Execution Controls</div><div class="control-buttons"><button class="btn" id="pauseTask">PAUSE</button><button class="btn success" id="resumeTask">RESUME</button><button class="btn danger" id="cancelTask">CANCEL</button></div></div>
+<div class="control-section"><div class="control-section-title">Priority</div><div class="priority-row"><input class="field" id="controlPriority" type="number" step="1"><button class="btn" id="applyPriority">APPLY</button></div></div>
 </div>
 </div>
-<div class="control-section">
-<div class="control-section-title">Priority</div>
-<div class="priority-row">
-<input class="field" id="controlPriority" type="number" step="1">
-<button class="btn" id="applyPriority">APPLY</button>
-</div>
-</div>
-</div>
-</div>
+
 <script type="module" src="/js/app.js"></script>
 </body>
 </html>
-
-
-
-
-
-
-
