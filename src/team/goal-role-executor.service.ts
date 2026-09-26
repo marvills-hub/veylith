@@ -1,3 +1,5 @@
+﻿import * as path from "node:path";
+import * as fs from "node:fs";
 import {synchronizeTaskDevelopment} from "../development/development-lifecycle.service.js";
 import {beginAutonomousLifecycle,checkpointAutonomousLifecycle,failAutonomousLifecycle,waitAutonomousLifecycle} from "../orchestration/v1/lifecycle/lifecycle.service.js";
 import crypto from "node:crypto";
@@ -279,6 +281,17 @@ function planFrom(
  return null;
 }
 
+function isDevelopmentResult(value:any):value is DevelopmentResult{
+ return Boolean(
+  value?.summary&&
+  Array.isArray(value?.files)&&
+  value.files.every((file:any)=>
+   file&&typeof file.path==="string"&&typeof file.content==="string"
+  )&&
+  Array.isArray(value?.commands)
+ );
+}
+
 function developmentFrom(
  dependencies:ReturnType<typeof dependencyResults>
 ):DevelopmentResult|null{
@@ -286,8 +299,26 @@ function developmentFrom(
   const record=dependency.roleResult;
   if(!record||record.status!=="completed")continue;
   const raw=record.result;
-  if(raw?.development?.summary&&Array.isArray(raw.development?.files)){
-   return raw.development;
+  if(isDevelopmentResult(raw?.development))return raw.development;
+  if(record.role==="developer"&&isDevelopmentResult(raw))return raw;
+ }
+ return null;
+}
+
+function developmentMetadataFrom(
+ dependencies:ReturnType<typeof dependencyResults>
+){
+ for(const dependency of dependencies){
+  const record=dependency.roleResult;
+  if(!record||record.status!=="completed")continue;
+  const raw=record.result;
+  const development=raw?.development;
+  if(
+   development?.summary&&
+   Array.isArray(development?.files)&&
+   Array.isArray(development?.commands)
+  ){
+   return development;
   }
   if(
    record.role==="developer"&&
@@ -299,6 +330,40 @@ function developmentFrom(
   }
  }
  return null;
+}
+
+function hydrateDevelopmentFromWorkspace(
+ development:any,
+ workspace:string
+):DevelopmentResult{
+ const root=path.resolve(workspace);
+ const files=(development.files??[]).map((file:any)=>{
+  if(
+   file&&
+   typeof file==="object"&&
+   typeof file.path==="string"&&
+   typeof file.content==="string"
+  ){
+   return{path:file.path,content:file.content};
+  }
+  const relative=typeof file==="string"?file:String(file?.path??"");
+  if(!relative)throw new Error("Development evidence contains an invalid file path.");
+  const absolute=path.resolve(root,relative);
+  const confined=absolute===root||absolute.startsWith(`${root}${path.sep}`);
+  if(!confined)throw new Error(`Development evidence escapes workspace: ${relative}`);
+  if(!fs.existsSync(absolute)||!fs.statSync(absolute).isFile()){
+   throw new Error(`Development evidence file is missing from workspace: ${relative}`);
+  }
+  return{
+   path:relative,
+   content:fs.readFileSync(absolute,"utf8")
+  };
+ });
+ return{
+  summary:String(development.summary),
+  files,
+  commands:Array.isArray(development.commands)?development.commands:[]
+ };
 }
 
 function validationFrom(dependencies:ReturnType<typeof dependencyResults>){
@@ -447,7 +512,12 @@ async function executeReviewer(
 ){
  const architecture=architectureFrom(dependencies)||syntheticArchitecture(context);
  const plan=planFrom(dependencies);
- const development=developmentFrom(dependencies);
+ const directDevelopment=developmentFrom(dependencies);
+ const developmentMetadata=developmentMetadataFrom(dependencies);
+ const development=directDevelopment||
+  (developmentMetadata
+   ?hydrateDevelopmentFromWorkspace(developmentMetadata,projectRow.workspace)
+   :null);
  const validation=validationFrom(dependencies);
  if(!plan)throw new Error("Reviewer requires a development plan.");
  if(!development)throw new Error("Reviewer requires a development result.");
@@ -744,6 +814,7 @@ export async function executeGoalTeamTask(task:any){
   throw error;
  }
 }
+
 
 
 
