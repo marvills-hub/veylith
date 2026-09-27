@@ -1,0 +1,8192 @@
+﻿* {
+  box-sizing: border-box;
+}
+:root {
+  --bg: #020202;
+  --black: #050505;
+  --surface: #080707d9;
+  --surface2: #0d0909e8;
+  --line: #391414;
+  --line2: #6e1c1c;
+  --red: #e32323;
+  --red2: #ff4949;
+  --gold: #d5a447;
+  --gold2: #ffd17a;
+  --text: #eee8e2;
+  --muted: #6e6562;
+  --good: #55c47a;
+  --warn: #db963c;
+}
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: #020202;
+  color: var(--text);
+  font-family:
+    Inter,
+    Segoe UI,
+    Arial,
+    sans-serif;
+}
+body {
+  overflow-x: hidden;
+}
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+button {
+  color: inherit;
+}
+.app {
+  min-height: 100vh;
+  background: radial-gradient(circle at 50% 32%, #320606 0, #100202 17%, #040202 44%, #020202 72%);
+  position: relative;
+}
+.app:before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(#42111112 1px, transparent 1px), linear-gradient(90deg, #42111112 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: radial-gradient(circle at center, #000 0, transparent 75%);
+}
+.command-shell {
+  width: 100%;
+  min-height: 100vh;
+  padding: 18px 22px 0;
+  position: relative;
+}
+.identity {
+  position: absolute;
+  left: 25px;
+  top: 18px;
+  z-index: 10;
+}
+.brand {
+  font-weight: 900;
+  letter-spacing: 8px;
+  font-size: 19px;
+  text-shadow: 0 0 20px #ff1b1b33;
+}
+.brand span {
+  color: var(--red);
+}
+.identity-sub {
+  font-size: 7px;
+  letter-spacing: 3px;
+  color: #6c4747;
+  margin-top: 4px;
+}
+.command-actions {
+  position: absolute;
+  right: 24px;
+  top: 17px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  z-index: 20;
+}
+.hud-button,
+.btn,
+.mini-btn {
+  border: 1px solid #581818;
+  background: #130707;
+  color: #e34a4a;
+  cursor: pointer;
+}
+.hud-button {
+  height: 30px;
+  padding: 0 11px;
+  font-size: 8px;
+  letter-spacing: 1px;
+}
+.hud-button.primary,
+.btn.primary {
+  background: #9f1212;
+  color: #fff;
+  border-color: #e12b2b;
+  box-shadow: 0 0 18px #d51d1d25;
+}
+.system-link {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: 7px;
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: #796c68;
+}
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #555;
+}
+.status-dot.online {
+  background: var(--good);
+  box-shadow: 0 0 10px #55c47a;
+}
+.status-dot.reconnecting {
+  background: var(--warn);
+}
+.status-dot.stale,
+.status-dot.offline {
+  background: var(--red2);
+}
+.command-stage {
+  position: relative;
+  min-height: 850px;
+  height: min(880px, calc(100vh - 62px));
+  margin-top: 38px;
+  overflow: hidden;
+}
+.command-stage:before,
+.command-stage:after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border: 1px solid #8c20201c;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.command-stage:before {
+  width: 620px;
+  height: 620px;
+}
+.command-stage:after {
+  width: 780px;
+  height: 780px;
+  border-style: dashed;
+}
+.veylith-center {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  width: min(48vw, 720px);
+  height: min(72vh, 690px);
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  pointer-events: none;
+}
+#veylithScene {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+}
+#veylithScene canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.center-radiance {
+  position: absolute;
+  left: 50%;
+  top: 49%;
+  width: 55%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, #ff271b22 0, #bd090912 38%, transparent 70%);
+  filter: blur(5px);
+}
+.scene-ring {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  border: 1px solid #a5262624;
+}
+.ring-one {
+  width: 58%;
+  box-shadow:
+    0 0 60px #8e111111,
+    inset 0 0 40px #8e111111;
+}
+.ring-two {
+  width: 73%;
+  border-style: dashed;
+  animation: ring 40s linear infinite;
+}
+.ring-three {
+  width: 88%;
+  border-color: #d49d3b12;
+  animation: ringReverse 65s linear infinite;
+}
+@keyframes ring {
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+@keyframes ringReverse {
+  to {
+    transform: translate(-50%, -50%) rotate(-360deg);
+  }
+}
+.center-status {
+  position: absolute;
+  left: 50%;
+  bottom: 3%;
+  transform: translateX(-50%);
+  z-index: 8;
+  width: 340px;
+  text-align: center;
+  pointer-events: auto;
+}
+.center-status > span {
+  font-size: 7px;
+  letter-spacing: 2px;
+  color: #734141;
+}
+.center-status > strong {
+  display: block;
+  font-size: 13px;
+  letter-spacing: 1.4px;
+  color: #e6d7cc;
+  margin: 4px 0 7px;
+}
+.current-agent-card {
+  display: grid;
+  grid-template-columns: 32px 1fr auto;
+  align-items: center;
+  text-align: left;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #080505c7;
+  border-top: 1px solid #5c1919;
+  border-bottom: 1px solid #291010;
+  backdrop-filter: blur(8px);
+}
+.agent-avatar {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #292020;
+  background: #0c0909;
+  color: #665b57;
+  font-size: 7px;
+  font-weight: 900;
+}
+.agent-avatar.working {
+  border-color: #7e2525;
+  color: #ff5b4d;
+  box-shadow: inset 0 0 14px #a2141438;
+}
+.agent-avatar.completed {
+  border-color: #285b39;
+  color: #62ca82;
+}
+.agent-avatar.failed {
+  border-color: #8d2020;
+  color: #ff3c3c;
+}
+.current-agent-info {
+  min-width: 0;
+}
+.current-agent-info .eyebrow {
+  font-size: 6px;
+  letter-spacing: 1.3px;
+  color: #8b3434;
+}
+.current-agent-info strong {
+  display: block;
+  font-size: 10px;
+  margin-top: 2px;
+}
+.current-agent-info p {
+  font-size: 8px;
+  color: #776d69;
+  margin: 2px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.current-progress {
+  font-size: 17px;
+  font-weight: 900;
+  color: var(--red2);
+}
+.hud-panel {
+  position: absolute;
+  z-index: 6;
+  background: linear-gradient(135deg, #090606db, #050404a8);
+  border-top: 1px solid #5c1a1a;
+  border-bottom: 1px solid #251010;
+  padding: 11px 12px;
+  backdrop-filter: blur(7px);
+  box-shadow: 0 15px 40px #0008;
+}
+.hud-panel:before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 0;
+  width: 40px;
+  height: 1px;
+  background: var(--gold);
+  box-shadow: 0 0 8px #d5a447;
+}
+.hud-title {
+  height: 22px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 7px;
+  letter-spacing: 1.5px;
+  color: #a94c45;
+}
+.hud-title b {
+  font-size: 7px;
+  color: #78645c;
+  font-weight: 600;
+}
+.agent-performance {
+  left: 2%;
+  top: 7%;
+  width: 27%;
+  height: 290px;
+}
+.project-progress {
+  right: 2%;
+  top: 7%;
+  width: 27%;
+  height: 290px;
+}
+.activity-panel {
+  left: 2%;
+  bottom: 12%;
+  width: 29%;
+  height: 260px;
+}
+.task-panel {
+  right: 2%;
+  bottom: 12%;
+  width: 29%;
+  height: 260px;
+}
+.agent-team {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2px;
+  height: 245px;
+  overflow: auto;
+}
+.agent-row {
+  display: grid;
+  grid-template-columns: 31px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 3px;
+  border-bottom: 1px solid #241010;
+}
+.agent-copy {
+  min-width: 0;
+}
+.agent-copy strong {
+  display: block;
+  font-size: 9px;
+}
+.agent-copy span {
+  display: block;
+  font-size: 7px;
+  color: #625956;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agent-state {
+  font-size: 6px;
+  letter-spacing: 0.8px;
+  color: #665b57;
+}
+.agent-state.working {
+  color: #ff4b4b;
+}
+.agent-state.completed {
+  color: #61c780;
+}
+.agent-state.failed {
+  color: #ff3333;
+}
+.projects,
+.task-list,
+.workers {
+  overflow: auto;
+}
+.projects {
+  height: 245px;
+}
+.project-row {
+  padding: 8px 2px;
+  border-bottom: 1px solid #241010;
+}
+.project-head,
+.task-top,
+.project-meta,
+.task-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.project-head,
+.task-top {
+  font-size: 9px;
+}
+.project-meta,
+.task-meta {
+  font-size: 7px;
+  color: #665b57;
+  margin-top: 5px;
+}
+.progress {
+  height: 3px;
+  background: #1c1010;
+  overflow: hidden;
+  margin-top: 6px;
+}
+.progress span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #861515, #ff3c2f, #d8a247);
+  box-shadow: 0 0 9px #e52525;
+}
+.task-list {
+  height: 225px;
+}
+.task-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #241010;
+  padding: 7px 3px;
+  cursor: pointer;
+}
+.task-row:hover,
+.task-row.selected {
+  background: #1a0909;
+}
+.status {
+  font-size: 7px;
+  text-transform: uppercase;
+  color: #756965;
+}
+.status.running,
+.status.online {
+  color: var(--good);
+}
+.status.completed,
+.status.verified {
+  color: #65bd7d;
+}
+.status.failed,
+.status.cancelled,
+.status.open {
+  color: var(--red2);
+}
+.status.paused,
+.status.waiting_ai {
+  color: var(--warn);
+}
+.feed {
+  height: 220px;
+  overflow: auto;
+  font:
+    8px Consolas,
+    monospace;
+}
+.event-row {
+  display: grid;
+  grid-template-columns: 55px 90px 1fr;
+  gap: 6px;
+  padding: 5px 0;
+  border-bottom: 1px solid #1b0c0c;
+}
+.event-row > span:first-child {
+  color: #514744;
+}
+.event-row b {
+  color: #cf3c36;
+  font-weight: 500;
+}
+.event-row.warn b {
+  color: var(--warn);
+}
+.event-row.error b,
+.event-row.fatal b {
+  color: #ff3b3b;
+}
+.pipeline-zone {
+  position: absolute;
+  z-index: 8;
+  left: 50%;
+  bottom: 1%;
+  transform: translateX(-50%);
+  width: 52%;
+  background: #070404b8;
+  border-top: 1px solid #451515;
+  padding: 8px 12px;
+  backdrop-filter: blur(8px);
+}
+.pipeline {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+.pipeline-stage {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 4px;
+  background: #0b0707;
+  color: #665b57;
+  font-size: 7px;
+  text-align: center;
+}
+.pipeline-stage.completed {
+  color: #5dc67d;
+}
+.pipeline-stage.working {
+  color: #ff4b42;
+  background: #1a0808;
+  box-shadow: inset 0 -1px #a82525;
+}
+.pipeline-stage.failed {
+  color: #ff3030;
+  background: #210707;
+}
+.pipeline-node {
+  font-size: 8px;
+}
+.micro-rail {
+  position: absolute;
+  top: 38%;
+  z-index: 10;
+  width: 104px;
+  background: #050404b8;
+  border-top: 1px solid #371313;
+  border-bottom: 1px solid #241010;
+  padding: 7px 8px;
+  backdrop-filter: blur(6px);
+}
+.rail-left {
+  left: 0;
+}
+.rail-right {
+  right: 0;
+}
+.micro-title {
+  font-size: 6px;
+  letter-spacing: 2px;
+  color: #8e3939;
+  margin-bottom: 5px;
+}
+.micro-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 5px;
+  padding: 4px 0;
+  border-bottom: 1px solid #160a0a;
+  font:
+    6px Consolas,
+    monospace;
+  color: #625956;
+}
+.micro-item b {
+  font-size: 6px;
+  color: #c8b9b1;
+  max-width: 58px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.telemetry-strip {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 120px 120px repeat(7, minmax(70px, 1fr));
+  gap: 1px;
+  border-top: 1px solid #411414;
+  border-bottom: 1px solid #251010;
+  background: #080505;
+  margin: 0 -22px;
+}
+.tiny-chart,
+.telemetry-slot {
+  min-width: 0;
+  padding: 5px 9px;
+  border-right: 1px solid #211010;
+  position: relative;
+}
+.tiny-chart span,
+.telemetry-slot > span {
+  display: block;
+  font-size: 6px;
+  letter-spacing: 1px;
+  color: #6f5a54;
+}
+.tiny-chart canvas {
+  position: absolute !important;
+  left: 35px !important;
+  right: 4px !important;
+  top: 4px !important;
+  width: calc(100% - 40px) !important;
+  height: 36px !important;
+}
+.telemetry-slot b {
+  display: block;
+  margin-top: 4px;
+  font:
+    8px Consolas,
+    monospace;
+  color: #bbaea8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.telemetry-slot small {
+  display: block;
+  font-size: 6px;
+  color: #554a47;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.telemetry-slot.wide {
+  min-width: 145px;
+}
+.connection-badge {
+  font-size: 7px !important;
+}
+.connection-badge.live {
+  color: var(--good);
+}
+.connection-badge.reconnecting {
+  color: var(--warn);
+}
+.connection-badge.stale,
+.connection-badge.offline {
+  color: var(--red2);
+}
+.detail-deck {
+  padding: 10px 0 30px;
+}
+.detail-grid {
+  display: grid;
+  grid-template-columns: 0.8fr 0.8fr 1.4fr;
+  gap: 7px;
+}
+.detail-panel {
+  background: #070505;
+  border-top: 1px solid #351313;
+  padding: 10px;
+  margin-bottom: 7px;
+  min-width: 0;
+}
+.workers {
+  max-height: 200px;
+}
+.worker-row,
+.health-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid #191010;
+  font-size: 8px;
+}
+.worker-main {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.worker-main small {
+  display: block;
+  color: #5e5350;
+  margin-top: 2px;
+}
+.state-indicator,
+.worker-health-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #555;
+}
+.state-indicator.running,
+.state-indicator.online,
+.state-indicator.idle,
+.worker-health-dot.live {
+  background: var(--good);
+}
+.terminal {
+  height: 180px;
+  overflow: auto;
+  background: #030303;
+  padding: 8px;
+  font:
+    8px Consolas,
+    monospace;
+  color: #827672;
+  white-space: pre-wrap;
+}
+.connection-overview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px;
+  background: #050404;
+  margin-bottom: 7px;
+}
+.connection-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.connection-main strong {
+  display: block;
+  font-size: 8px;
+}
+.connection-main span {
+  display: block;
+  font-size: 6px;
+  color: #5e5350;
+  margin-top: 2px;
+}
+.connection-pulse {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #07140b;
+}
+.connection-pulse span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--good);
+  box-shadow: 0 0 10px var(--good);
+}
+.connection-legend {
+  display: flex;
+  gap: 8px;
+}
+.connection-legend span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 6px;
+  color: #625956;
+}
+.connection-legend i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+.connection-legend .live {
+  background: var(--good);
+}
+.connection-legend .reconnecting {
+  background: var(--warn);
+}
+.connection-legend .stale,
+.connection-legend .offline {
+  background: var(--red);
+}
+.connection-workers {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+.connection-worker {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+  background: #050404;
+  padding: 6px;
+  border: 1px solid #1c0e0e;
+}
+.connection-worker strong {
+  font-size: 8px;
+}
+.connection-worker span,
+.connection-worker small {
+  font-size: 6px;
+  color: #5e5350;
+}
+.connection-worker b {
+  font-size: 6px;
+  color: var(--good);
+}
+.connection-worker small {
+  grid-column: 2/4;
+}
+.sub-title {
+  font-size: 7px;
+  letter-spacing: 1.4px;
+  color: #64524c;
+  margin: 5px 0 7px;
+}
+.publication-current {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  background: #080505;
+  margin-bottom: 8px;
+}
+.git-mark {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #4c1717;
+  color: #ff4b43;
+  font-size: 8px;
+  font-weight: 900;
+}
+.publication-copy {
+  flex: 1;
+  min-width: 0;
+}
+.publication-copy .eyebrow {
+  font-size: 6px;
+  color: #7c3434;
+}
+.publication-copy strong {
+  font-size: 10px;
+}
+.publication-copy p {
+  font-size: 7px;
+  color: #665b57;
+  margin: 2px 0 0;
+}
+.publication-badge {
+  font-size: 6px;
+  padding: 4px;
+  border: 1px solid #302020;
+}
+.publication-layout {
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr;
+  gap: 8px;
+}
+.publication-pipeline {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+}
+.git-stage,
+.git-meta-card {
+  background: #050404;
+  border: 1px solid #1c1010;
+  padding: 7px;
+  min-width: 0;
+}
+.git-stage-node {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #100909;
+  color: #665b57;
+  font-size: 7px;
+  margin-bottom: 5px;
+}
+.git-stage strong {
+  font-size: 7px;
+}
+.git-stage span,
+.git-meta-card span {
+  display: block;
+  font-size: 6px;
+  color: #5c514d;
+  margin-top: 3px;
+}
+.git-stage.completed {
+  border-color: #173322;
+}
+.git-stage.completed .git-stage-node {
+  color: #58bd78;
+}
+.git-stage.working {
+  border-color: #541919;
+}
+.git-stage.working .git-stage-node {
+  color: #ff4747;
+}
+.git-stage.failed {
+  border-color: #701919;
+}
+.publication-meta {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+}
+.git-meta-card.wide {
+  grid-column: span 2;
+}
+.git-meta-card strong,
+.git-meta-card a {
+  display: block;
+  font:
+    7px Consolas,
+    monospace;
+  color: #a99b95;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.git-meta-card a {
+  color: #db4039;
+  text-decoration: none;
+}
+.operations-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.ops-card,
+.operations-block {
+  background: #050404;
+  border: 1px solid #1b0e0e;
+  padding: 7px;
+  min-width: 0;
+}
+.ops-card span {
+  display: block;
+  font-size: 6px;
+  color: #5d514d;
+  text-transform: uppercase;
+}
+.ops-card strong {
+  display: block;
+  font-size: 8px;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ops-value.good {
+  color: var(--good);
+}
+.ops-value.warn {
+  color: var(--warn);
+}
+.ops-value.bad {
+  color: var(--red2);
+}
+.operations-grid {
+  display: grid;
+  grid-template-columns: 1.6fr 0.8fr;
+  gap: 5px;
+}
+.operations-side {
+  display: grid;
+  gap: 5px;
+}
+.operations-head {
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 7px;
+  letter-spacing: 1px;
+  color: #6c5b55;
+}
+.operations-head select {
+  background: #080505;
+  color: #887873;
+  border: 1px solid #2b1515;
+  font-size: 7px;
+}
+.ops-logs {
+  height: 250px;
+  overflow: auto;
+  font:
+    7px Consolas,
+    monospace;
+}
+.ops-log {
+  display: grid;
+  grid-template-columns: 105px 34px 65px 1fr;
+  gap: 5px;
+  padding: 5px 2px;
+  border-bottom: 1px solid #170b0b;
+}
+.ops-log p {
+  margin: 0;
+  color: #82746e;
+}
+.ops-log.warn b {
+  color: var(--warn);
+}
+.ops-log.error b,
+.ops-log.fatal b {
+  color: var(--red2);
+}
+.provider-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 0;
+  border-bottom: 1px solid #160b0b;
+}
+.provider-row strong {
+  font-size: 7px;
+}
+.provider-row span {
+  display: block;
+  font-size: 6px;
+  color: #5b504c;
+}
+.security-events {
+  height: 160px;
+  overflow: auto;
+}
+.security-event {
+  padding: 5px 0;
+  border-bottom: 1px solid #160b0b;
+}
+.security-event div {
+  display: flex;
+  justify-content: space-between;
+}
+.security-event strong {
+  font-size: 7px;
+  color: #ce443d;
+}
+.security-event span,
+.security-event p {
+  font-size: 6px;
+  color: #5d514d;
+}
+.security-event p {
+  margin: 3px 0;
+}
+.mini-btn {
+  padding: 3px 6px;
+  font-size: 6px;
+}
+.empty {
+  padding: 12px 3px;
+  color: #554a47;
+  font-size: 8px;
+}
+.error-box {
+  display: none;
+  background: #180707;
+  border: 1px solid #4b1717;
+  color: #ff6565;
+  padding: 8px;
+  font:
+    8px Consolas,
+    monospace;
+  white-space: pre-wrap;
+}
+.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: #000d;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal.open {
+  display: flex;
+}
+.dialog {
+  width: min(570px, 92vw);
+  padding: 20px;
+  background: #090606;
+  border: 1px solid #5c1919;
+}
+.dialog h2 {
+  margin: 0 0 16px;
+  font-size: 17px;
+}
+.field {
+  width: 100%;
+  background: #050404;
+  border: 1px solid #2b1919;
+  color: #eee;
+  padding: 9px;
+  margin-bottom: 8px;
+  outline: 0;
+}
+.field:focus {
+  border-color: #8e2020;
+}
+.dialog textarea {
+  height: 140px;
+  resize: vertical;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.btn {
+  padding: 8px 12px;
+}
+.btn.success {
+  background: #08160d;
+  border-color: #245d37;
+  color: #59c77d;
+}
+.btn.danger {
+  background: #1d0808;
+  border-color: #711919;
+  color: #ff4545;
+}
+.btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.control-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: #000d;
+  z-index: 110;
+  justify-content: flex-end;
+}
+.control-overlay.open {
+  display: flex;
+}
+.control-panel {
+  height: 100%;
+  width: min(520px, 96vw);
+  background: #080505;
+  border-left: 1px solid #4a1616;
+  padding: 20px;
+  overflow: auto;
+}
+.control-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #211010;
+}
+.control-head h2 {
+  margin: 0 0 4px;
+  font-size: 17px;
+}
+.control-id {
+  font:
+    8px Consolas,
+    monospace;
+  color: #5b504c;
+}
+.close-control {
+  border: 0;
+  background: none;
+  color: #887873;
+  font-size: 22px;
+  cursor: pointer;
+}
+.control-status {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 15px;
+}
+.control-progress {
+  margin: 12px 0 18px;
+}
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 5px;
+}
+.control-card {
+  background: #0a0606;
+  border: 1px solid #211010;
+  padding: 9px;
+}
+.control-label,
+.control-section-title {
+  font-size: 7px;
+  letter-spacing: 1px;
+  color: #62544f;
+  text-transform: uppercase;
+}
+.control-value {
+  font:
+    9px Consolas,
+    monospace;
+  color: #b5a7a1;
+  margin-top: 5px;
+}
+.control-section {
+  border-top: 1px solid #211010;
+  padding-top: 14px;
+  margin-top: 14px;
+}
+.control-buttons,
+.priority-row {
+  display: flex;
+  gap: 6px;
+}
+.priority-row .field {
+  margin: 0;
+}
+@media (max-width: 1350px) {
+  .agent-performance,
+  .project-progress {
+    width: 30%;
+  }
+  .activity-panel,
+  .task-panel {
+    width: 31%;
+  }
+  .veylith-center {
+    width: 52vw;
+  }
+  .pipeline-zone {
+    width: 48%;
+  }
+}
+@media (max-width: 1050px) {
+  .command-stage {
+    height: auto;
+    min-height: 1250px;
+  }
+  .veylith-center {
+    top: 330px;
+    width: 680px;
+    height: 600px;
+  }
+  .agent-performance {
+    left: 1%;
+    top: 650px;
+    width: 48%;
+  }
+  .project-progress {
+    right: 1%;
+    top: 650px;
+    width: 48%;
+  }
+  .activity-panel {
+    left: 1%;
+    bottom: 95px;
+    width: 48%;
+  }
+  .task-panel {
+    right: 1%;
+    bottom: 95px;
+    width: 48%;
+  }
+  .pipeline-zone {
+    bottom: 15px;
+    width: 98%;
+  }
+  .micro-rail {
+    top: 540px;
+  }
+  .telemetry-strip {
+    grid-template-columns: repeat(5, 1fr);
+  }
+  .tiny-chart {
+    display: none;
+  }
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+  .connection-workers {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 650px) {
+  .command-shell {
+    padding: 14px 10px 0;
+  }
+  .identity-sub {
+    display: none;
+  }
+  .brand {
+    font-size: 15px;
+  }
+  .command-actions {
+    right: 10px;
+  }
+  .hud-button {
+    display: none;
+  }
+  .command-stage {
+    margin-top: 35px;
+    min-height: 1760px;
+  }
+  .veylith-center {
+    top: 280px;
+    width: 620px;
+    max-width: 130vw;
+    height: 520px;
+  }
+  .micro-rail {
+    top: 520px;
+  }
+  .agent-performance,
+  .project-progress,
+  .activity-panel,
+  .task-panel {
+    left: 0;
+    right: auto;
+    width: 100%;
+    height: 250px;
+  }
+  .agent-performance {
+    top: 630px;
+  }
+  .project-progress {
+    top: 890px;
+  }
+  .activity-panel {
+    top: 1150px;
+  }
+  .task-panel {
+    top: 1410px;
+  }
+  .pipeline-zone {
+    bottom: 5px;
+  }
+  .telemetry-strip {
+    margin: 0 -10px;
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .publication-layout,
+  .operations-grid {
+    grid-template-columns: 1fr;
+  }
+  .publication-meta {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .connection-workers {
+    grid-template-columns: 1fr;
+  }
+  .control-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* VEYLITH COMPACT READABILITY PASS */
+:root {
+  --ui-font: 11px;
+  --ui-small: 9px;
+  --ui-tiny: 8px;
+  --scroll: #6f1b1b;
+  --scroll-hover: #c52b2b;
+  --scroll-track: #080303;
+}
+
+/* GLOBAL READABILITY */
+body {
+  font-size: var(--ui-font);
+}
+.hud-title {
+  height: 19px;
+  font-size: 9px;
+  letter-spacing: 1.25px;
+}
+.hud-title b {
+  font-size: 8px;
+}
+.identity-sub {
+  font-size: 8px;
+}
+.system-link {
+  font-size: 9px;
+}
+.hud-button {
+  font-size: 9px;
+  height: 28px;
+}
+.empty {
+  font-size: 10px;
+  padding: 7px 2px;
+}
+
+/* MAIN SCREEN: REDUCE UNUSED SPACE */
+.command-shell {
+  padding: 10px 14px 0;
+}
+.identity {
+  left: 16px;
+  top: 12px;
+}
+.command-actions {
+  right: 16px;
+  top: 11px;
+}
+.command-stage {
+  margin-top: 30px;
+  min-height: 720px;
+  height: min(760px, calc(100vh - 45px));
+}
+.agent-performance {
+  left: 2%;
+  top: 5%;
+  width: 28%;
+  height: 270px;
+}
+.project-progress {
+  right: 2%;
+  top: 5%;
+  width: 28%;
+  height: 270px;
+}
+.activity-panel {
+  left: 2%;
+  bottom: 9%;
+  width: 30%;
+  height: 235px;
+}
+.task-panel {
+  right: 2%;
+  bottom: 9%;
+  width: 30%;
+  height: 235px;
+}
+.veylith-center {
+  top: 47%;
+  width: min(48vw, 700px);
+  height: min(69vh, 640px);
+}
+.pipeline-zone {
+  bottom: 0.5%;
+  padding: 6px 9px;
+  width: 52%;
+}
+
+/* PANELS */
+.hud-panel {
+  padding: 8px 9px;
+}
+.agent-team {
+  height: 228px;
+  gap: 0;
+}
+.projects {
+  height: 228px;
+}
+.feed {
+  height: 198px;
+}
+.task-list {
+  height: 198px;
+}
+
+/* AGENTS */
+.agent-row {
+  grid-template-columns: 34px 1fr auto;
+  gap: 7px;
+  padding: 4px 2px;
+}
+.agent-avatar {
+  width: 30px;
+  height: 30px;
+  font-size: 9px;
+}
+.agent-copy strong {
+  font-size: 10px;
+}
+.agent-copy span {
+  font-size: 8px;
+  margin-top: 1px;
+}
+.agent-state {
+  font-size: 8px;
+}
+
+/* PROJECTS */
+.project-row {
+  padding: 6px 2px;
+}
+.project-head,
+.task-top {
+  font-size: 10px;
+}
+.project-meta,
+.task-meta {
+  font-size: 8px;
+  margin-top: 3px;
+}
+.progress {
+  height: 3px;
+  margin-top: 4px;
+}
+
+/* TASKS */
+.task-row {
+  padding: 6px 2px;
+}
+.status {
+  font-size: 8px;
+}
+
+/* ACTIVITY */
+.feed {
+  font-size: 9px;
+}
+.event-row {
+  grid-template-columns: 62px 105px 1fr;
+  gap: 5px;
+  padding: 4px 0;
+}
+
+/* CENTER VEYLITH INFORMATION */
+.center-status {
+  bottom: 1%;
+  width: 350px;
+}
+.center-status > span {
+  font-size: 8px;
+}
+.center-status > strong {
+  font-size: 14px;
+  margin: 3px 0 5px;
+}
+.current-agent-card {
+  grid-template-columns: 34px 1fr auto;
+  gap: 7px;
+  padding: 6px 8px;
+}
+.current-agent-info .eyebrow {
+  font-size: 7px;
+}
+.current-agent-info strong {
+  font-size: 11px;
+}
+.current-agent-info p {
+  font-size: 9px;
+}
+.current-progress {
+  font-size: 18px;
+}
+
+/* PIPELINE */
+.pipeline-stage {
+  padding: 5px 2px;
+  font-size: 8px;
+}
+.pipeline-node {
+  font-size: 9px;
+}
+
+/* SIDE TELEMETRY */
+.micro-rail {
+  width: 110px;
+  padding: 6px 7px;
+}
+.micro-title {
+  font-size: 7px;
+  margin-bottom: 3px;
+}
+.micro-item {
+  padding: 3px 0;
+  font-size: 7px;
+}
+.micro-item b {
+  font-size: 7px;
+  max-width: 64px;
+}
+
+/* BOTTOM TELEMETRY */
+.telemetry-strip {
+  min-height: 42px;
+  margin: 0 -14px;
+}
+.tiny-chart,
+.telemetry-slot {
+  padding: 4px 7px;
+}
+.tiny-chart span,
+.telemetry-slot > span {
+  font-size: 7px;
+}
+.telemetry-slot b {
+  margin-top: 3px;
+  font-size: 9px;
+}
+.telemetry-slot small {
+  font-size: 7px;
+  margin-top: 1px;
+}
+.tiny-chart canvas {
+  height: 31px !important;
+}
+
+/* DETAIL AREA: REMOVE LARGE EMPTY GAPS */
+.detail-deck {
+  padding: 6px 0 18px;
+}
+.detail-grid {
+  grid-template-columns: 0.8fr 0.8fr 1.4fr;
+  gap: 4px;
+}
+.detail-panel {
+  padding: 7px;
+  margin-bottom: 4px;
+}
+.workers {
+  max-height: 180px;
+}
+.worker-row,
+.health-row {
+  padding: 4px 0;
+  font-size: 9px;
+}
+.worker-main small {
+  font-size: 8px;
+}
+.terminal {
+  height: 170px;
+  padding: 6px;
+  font-size: 9px;
+}
+.connection-overview {
+  padding: 5px;
+  margin-bottom: 4px;
+}
+.connection-main strong {
+  font-size: 9px;
+}
+.connection-main span {
+  font-size: 7px;
+}
+.connection-legend span {
+  font-size: 7px;
+}
+.connection-workers {
+  gap: 3px;
+}
+.connection-worker {
+  padding: 5px;
+  gap: 5px;
+}
+.connection-worker strong {
+  font-size: 9px;
+}
+.connection-worker span,
+.connection-worker small,
+.connection-worker b {
+  font-size: 7px;
+}
+
+/* GIT */
+.publication-current {
+  padding: 6px;
+  margin-bottom: 5px;
+}
+.git-mark {
+  width: 30px;
+  height: 30px;
+  font-size: 9px;
+}
+.publication-copy .eyebrow {
+  font-size: 7px;
+}
+.publication-copy strong {
+  font-size: 11px;
+}
+.publication-copy p {
+  font-size: 8px;
+}
+.publication-badge {
+  font-size: 7px;
+}
+.publication-layout {
+  gap: 4px;
+}
+.sub-title {
+  font-size: 8px;
+  margin: 3px 0 5px;
+}
+.publication-pipeline,
+.publication-meta {
+  gap: 2px;
+}
+.git-stage,
+.git-meta-card {
+  padding: 5px;
+}
+.git-stage-node {
+  width: 17px;
+  height: 17px;
+  margin-bottom: 3px;
+}
+.git-stage strong {
+  font-size: 8px;
+}
+.git-stage span,
+.git-meta-card span {
+  font-size: 7px;
+}
+.git-meta-card strong,
+.git-meta-card a {
+  font-size: 8px;
+}
+
+/* OPERATIONS */
+.operations-summary {
+  gap: 3px;
+  margin-bottom: 4px;
+}
+.ops-card,
+.operations-block {
+  padding: 5px;
+}
+.ops-card span {
+  font-size: 7px;
+}
+.ops-card strong {
+  font-size: 9px;
+}
+.operations-grid {
+  gap: 3px;
+}
+.operations-side {
+  gap: 3px;
+}
+.operations-head {
+  height: 19px;
+  font-size: 8px;
+}
+.operations-head select {
+  font-size: 8px;
+}
+.ops-logs {
+  height: 220px;
+  font-size: 8px;
+}
+.ops-log {
+  grid-template-columns: 115px 40px 72px 1fr;
+  gap: 4px;
+  padding: 4px 2px;
+}
+.provider-row {
+  padding: 4px 0;
+}
+.provider-row strong {
+  font-size: 9px;
+}
+.provider-row span {
+  font-size: 7px;
+}
+.security-events {
+  height: 150px;
+}
+.security-event {
+  padding: 4px 0;
+}
+.security-event strong {
+  font-size: 8px;
+}
+.security-event span,
+.security-event p {
+  font-size: 7px;
+}
+
+/* DARK AUTO-HIDING SCROLLBARS */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+*:hover {
+  scrollbar-color: var(--scroll) transparent;
+}
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 20px;
+}
+:hover::-webkit-scrollbar-thumb {
+  background: var(--scroll);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-hover) !important;
+  box-shadow: 0 0 8px #c52b2b;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ONLY SCROLLABLE UI GETS POINTER-FRIENDLY THUMB */
+.agent-team,
+.projects,
+.feed,
+.task-list,
+.workers,
+.connection-workers,
+.ops-logs,
+.security-events,
+.terminal,
+.control-panel {
+  scrollbar-gutter: auto;
+}
+
+/* COMPACT MODALS */
+.dialog {
+  padding: 15px;
+}
+.dialog h2 {
+  margin-bottom: 11px;
+}
+.field {
+  padding: 7px;
+  margin-bottom: 6px;
+}
+.control-panel {
+  padding: 14px;
+}
+.control-head {
+  padding-bottom: 10px;
+}
+.control-status {
+  margin-top: 10px;
+}
+.control-progress {
+  margin: 8px 0 12px;
+}
+.control-card {
+  padding: 7px;
+}
+.control-section {
+  padding-top: 10px;
+  margin-top: 10px;
+}
+
+@media (max-width: 1050px) {
+  .command-shell {
+    padding: 10px;
+  }
+  .telemetry-strip {
+    margin: 0 -10px;
+  }
+}
+
+/* CONTROL CENTER V2 */
+.v2-control-center {
+  padding: 10px 0 4px;
+}
+.v2-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 9px 10px;
+  border-top: 1px solid #571818;
+  border-bottom: 1px solid #251010;
+  background: linear-gradient(90deg, #100505, #070404);
+}
+.v2-heading span {
+  display: block;
+  font-size: 7px;
+  letter-spacing: 2px;
+  color: #8d3838;
+}
+.v2-heading strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 15px;
+  letter-spacing: 2px;
+}
+.v2-heading > b {
+  max-width: 45%;
+  font:
+    8px Consolas,
+    monospace;
+  color: #9e8c85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2-overview {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3px;
+  margin: 5px 0;
+}
+.v2-stat {
+  min-width: 0;
+  background: #070505;
+  border: 1px solid #1e1010;
+  padding: 7px 8px;
+  position: relative;
+  overflow: hidden;
+}
+.v2-stat:before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #542020;
+}
+.v2-stat.good:before {
+  background: var(--good);
+}
+.v2-stat.live:before {
+  background: var(--red2);
+  box-shadow: 0 0 9px var(--red);
+}
+.v2-stat.warn:before {
+  background: var(--warn);
+}
+.v2-stat.bad:before {
+  background: #ff2727;
+}
+.v2-stat span {
+  display: block;
+  font-size: 6px;
+  letter-spacing: 1.2px;
+  color: #665653;
+}
+.v2-stat strong {
+  display: block;
+  margin-top: 4px;
+  font:
+    11px Consolas,
+    monospace;
+  color: #d7cbc6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.v2-stat small {
+  display: block;
+  margin-top: 2px;
+  font-size: 7px;
+  color: #5f5350;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.v2-grid {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr 1fr;
+  gap: 4px;
+}
+.v2-panel {
+  min-width: 0;
+  background: #070505;
+  border-top: 1px solid #351313;
+  padding: 7px;
+  min-height: 230px;
+}
+.v2-panel.v2-wide {
+  grid-column: span 2;
+}
+.v2-panel-head {
+  height: 22px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  font-size: 8px;
+  letter-spacing: 1.3px;
+  color: #a44440;
+}
+.v2-panel-head b {
+  font-size: 7px;
+  color: #695955;
+}
+.v2-execution {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  max-height: 260px;
+  overflow: auto;
+}
+.v2-work {
+  display: grid;
+  grid-template-columns: 7px 1fr auto;
+  align-items: center;
+  gap: 7px;
+  background: #050404;
+  border: 1px solid #190d0d;
+  padding: 6px;
+}
+.v2-work-node {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #554542;
+}
+.v2-work.completed .v2-work-node {
+  background: var(--good);
+  box-shadow: 0 0 6px #55c47a;
+}
+.v2-work.running .v2-work-node,
+.v2-work.working .v2-work-node {
+  background: var(--red2);
+  box-shadow: 0 0 8px var(--red2);
+}
+.v2-work.failed .v2-work-node {
+  background: #ff2424;
+  box-shadow: 0 0 8px #ff2424;
+}
+.v2-work strong,
+.v2-reliability-row strong,
+.v2-assignment strong,
+.v2-engineering-row strong {
+  display: block;
+  font-size: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2-work small,
+.v2-reliability-row small,
+.v2-assignment small,
+.v2-engineering-row small {
+  display: block;
+  margin-top: 2px;
+  font-size: 7px;
+  color: #5f5350;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2-work > b {
+  font-size: 6px;
+  text-transform: uppercase;
+  color: #766762;
+}
+.v2-reliability-row,
+.v2-assignment,
+.v2-engineering-row {
+  display: grid;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 2px;
+  border-bottom: 1px solid #190d0d;
+}
+.v2-reliability-row {
+  grid-template-columns: 7px 1fr auto;
+}
+.v2-assignment {
+  grid-template-columns: 30px 1fr auto;
+}
+.v2-engineering-row {
+  grid-template-columns: 25px 1fr auto;
+}
+.v2-health {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #555;
+}
+.v2-health.healthy,
+.v2-health.running {
+  background: var(--good);
+  box-shadow: 0 0 7px var(--good);
+}
+.v2-health.warning,
+.v2-health.queued {
+  background: var(--warn);
+}
+.v2-health.expired,
+.v2-health.failed {
+  background: var(--red2);
+  box-shadow: 0 0 7px var(--red2);
+}
+.v2-reliability-meta {
+  text-align: right;
+}
+.v2-reliability-meta b {
+  display: block;
+  font-size: 7px;
+  color: #9c8b84;
+}
+.v2-engineering-icon {
+  width: 21px;
+  height: 21px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #2c1717;
+  font-size: 9px;
+}
+.v2-engineering-icon.completed {
+  border-color: #28563a;
+  color: var(--good);
+}
+.v2-engineering-icon.failed {
+  border-color: #7b1b1b;
+  color: var(--red2);
+}
+.v2-release-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: #050404;
+  padding: 7px;
+  margin-bottom: 4px;
+}
+.v2-release-head > div:nth-child(2) {
+  flex: 1;
+}
+.v2-release-head span {
+  display: block;
+  font-size: 6px;
+  color: #6b5752;
+}
+.v2-release-head strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+}
+.v2-release-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+}
+@media (max-width: 1200px) {
+  .v2-overview {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .v2-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .v2-panel.v2-wide {
+    grid-column: span 2;
+  }
+}
+@media (max-width: 750px) {
+  .v2-overview {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .v2-grid {
+    grid-template-columns: 1fr;
+  }
+  .v2-panel.v2-wide {
+    grid-column: span 1;
+  }
+  .v2-execution {
+    grid-template-columns: 1fr;
+  }
+  .v2-release-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* VEYLITH READABILITY V3 */
+:root {
+  --read-primary: #f0e7e2;
+  --read-secondary: #b9aaa4;
+  --read-muted: #8f817c;
+}
+body {
+  font-size: 14px;
+}
+.identity-sub {
+  font-size: 10px;
+  color: #a97874;
+}
+.system-link {
+  font-size: 11px;
+  color: #b4a5a0;
+}
+.hud-button {
+  font-size: 11px;
+  height: 34px;
+}
+.hud-title {
+  height: 27px;
+  font-size: 11px;
+  color: #d85a52;
+}
+.hud-title b {
+  font-size: 10px;
+  color: #aa9690;
+}
+.agent-performance,
+.project-progress {
+  height: 330px;
+}
+.activity-panel,
+.task-panel {
+  height: 300px;
+}
+.agent-team,
+.projects {
+  height: 282px;
+}
+.task-list {
+  height: 255px;
+}
+.agent-row {
+  grid-template-columns: 38px 1fr auto;
+  gap: 10px;
+  padding: 7px 4px;
+}
+.agent-avatar {
+  width: 35px;
+  height: 35px;
+  font-size: 11px;
+}
+.agent-copy strong {
+  font-size: 13px;
+  color: var(--read-primary);
+}
+.agent-copy span {
+  font-size: 11px;
+  color: var(--read-secondary);
+  margin-top: 2px;
+}
+.agent-state {
+  font-size: 10px;
+  font-weight: 700;
+}
+.project-row {
+  padding: 9px 3px;
+}
+.project-head,
+.task-top {
+  font-size: 13px;
+  color: var(--read-primary);
+}
+.project-meta,
+.task-meta {
+  font-size: 10px;
+  color: var(--read-secondary);
+  margin-top: 5px;
+}
+.task-row {
+  padding: 9px 3px;
+}
+.status {
+  font-size: 10px;
+  font-weight: 700;
+}
+.feed {
+  font-size: 11px;
+  line-height: 1.55;
+}
+.feed > * {
+  min-height: 23px;
+}
+.center-status > span {
+  font-size: 10px;
+  color: #bb6964;
+}
+.center-status > strong {
+  font-size: 17px;
+  color: #f4e9e2;
+}
+.current-agent-card {
+  grid-template-columns: 38px 1fr auto;
+  padding: 10px 12px;
+}
+.current-agent-info .eyebrow {
+  font-size: 9px;
+  color: #c4544e;
+}
+.current-agent-info strong {
+  font-size: 14px;
+  color: var(--read-primary);
+}
+.current-agent-info p {
+  font-size: 11px;
+  color: var(--read-secondary);
+}
+.current-progress {
+  font-size: 22px;
+}
+.pipeline-zone {
+  padding: 10px 14px;
+}
+.pipeline-stage {
+  padding: 8px 5px;
+  font-size: 10px;
+  color: #a99a95;
+}
+.pipeline-node {
+  font-size: 11px;
+}
+.micro-rail {
+  width: 142px;
+  padding: 10px 11px;
+}
+.micro-title {
+  font-size: 9px;
+  color: #c44b47;
+  margin-bottom: 7px;
+}
+.micro-item {
+  min-height: 22px;
+}
+.micro-item span {
+  font-size: 9px;
+  color: #91827d;
+}
+.micro-item b {
+  font-size: 10px;
+  color: #ddd0ca;
+  max-width: 85px;
+}
+.telemetry-strip {
+  min-height: 62px;
+  grid-template-columns: 135px 135px repeat(7, minmax(90px, 1fr));
+}
+.tiny-chart,
+.telemetry-slot {
+  padding: 7px 10px;
+}
+.tiny-chart span,
+.telemetry-slot > span {
+  font-size: 9px;
+  color: #9f8b84;
+}
+.telemetry-slot b {
+  font-size: 11px;
+  color: #e0d4ce;
+}
+.telemetry-slot small {
+  font-size: 9px;
+  color: #897a75;
+}
+.connection-badge {
+  font-size: 10px !important;
+}
+.worker-row,
+.health-row {
+  font-size: 11px;
+  padding: 8px 0;
+}
+.connection-main strong {
+  font-size: 12px;
+}
+.connection-main span {
+  font-size: 10px;
+  color: var(--read-secondary);
+}
+.connection-legend span {
+  font-size: 9px;
+  color: var(--read-secondary);
+}
+.connection-worker strong {
+  font-size: 11px;
+}
+.connection-worker span,
+.connection-worker small {
+  font-size: 9px;
+  color: var(--read-secondary);
+}
+.connection-worker b {
+  font-size: 9px;
+}
+.sub-title {
+  font-size: 10px;
+  color: #9d8982;
+}
+.publication-copy .eyebrow {
+  font-size: 9px;
+}
+.publication-copy strong {
+  font-size: 13px;
+}
+.publication-copy p {
+  font-size: 10px;
+  color: var(--read-secondary);
+}
+.publication-badge {
+  font-size: 9px;
+}
+.git-stage strong {
+  font-size: 10px;
+}
+.git-stage span,
+.git-meta-card span {
+  font-size: 9px;
+  color: var(--read-secondary);
+}
+.git-meta-card strong,
+.git-meta-card a {
+  font-size: 10px;
+}
+.ops-card span {
+  font-size: 9px;
+  color: #a18f89;
+}
+.ops-card strong {
+  font-size: 11px;
+}
+.operations-head {
+  font-size: 10px;
+}
+.operations-head select {
+  font-size: 10px;
+}
+.provider-row strong {
+  font-size: 11px;
+}
+.provider-row span {
+  font-size: 9px;
+  color: var(--read-secondary);
+}
+.security-event strong {
+  font-size: 10px;
+}
+.security-event span,
+.security-event p {
+  font-size: 9px;
+  color: var(--read-secondary);
+}
+.empty {
+  font-size: 11px;
+  color: #998a84;
+}
+
+/* CONTROL CENTER V2 READABILITY */
+.v2-heading span {
+  font-size: 10px;
+  color: #c34b47;
+}
+.v2-heading strong {
+  font-size: 18px;
+}
+.v2-stat span {
+  font-size: 9px;
+  color: #a7938c;
+}
+.v2-stat small {
+  font-size: 10px;
+  color: var(--read-secondary);
+}
+.v2-panel-head {
+  height: 27px;
+  font-size: 11px;
+  color: #d45a54;
+}
+.v2-panel-head b {
+  font-size: 10px;
+  color: #a3918b;
+}
+.v2-work strong,
+.v2-reliability-row strong,
+.v2-assignment strong,
+.v2-engineering-row strong {
+  font-size: 12px;
+  color: var(--read-primary);
+}
+.v2-work small,
+.v2-reliability-row small,
+.v2-assignment small,
+.v2-engineering-row small {
+  font-size: 10px;
+  color: var(--read-secondary);
+}
+.v2-work > b {
+  font-size: 9px;
+}
+.v2-reliability-meta b {
+  font-size: 10px;
+}
+.v2-engineering-icon {
+  width: 27px;
+  height: 27px;
+  font-size: 11px;
+}
+.v2-release-head span {
+  font-size: 9px;
+  color: #9f8982;
+}
+.v2-release-head strong {
+  font-size: 13px;
+}
+
+@media (max-width: 1350px) {
+  .micro-rail {
+    width: 125px;
+  }
+}
+@media (max-width: 650px) {
+  body {
+    font-size: 13px;
+  }
+  .agent-copy strong,
+  .project-head,
+  .task-top {
+    font-size: 12px;
+  }
+  .agent-copy span,
+  .project-meta,
+  .task-meta,
+  .feed {
+    font-size: 10px;
+  }
+}
+/* END VEYLITH READABILITY V3 */
+
+/* VEYLITH PROJECT COMMAND CENTER V3 */
+.command-stage {
+  min-height: 900px !important;
+  height: min(930px, calc(100vh - 48px)) !important;
+  overflow: hidden;
+}
+.main-terminal {
+  left: 1.2% !important;
+  top: 2% !important;
+  width: 28% !important;
+  height: 250px !important;
+  padding: 10px 11px !important;
+}
+.main-terminal .terminal {
+  height: 205px !important;
+  background: linear-gradient(180deg, #030303, #070202) !important;
+  border: 1px solid #261010 !important;
+  font-size: 11px !important;
+  line-height: 1.5 !important;
+  color: #b8aaa4 !important;
+}
+.workforce-panel {
+  left: 1.2% !important;
+  top: 31% !important;
+  width: 28% !important;
+  height: 390px !important;
+}
+.workforce-panel .agent-team {
+  height: 342px !important;
+  overflow: hidden !important;
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  grid-auto-rows: 1fr !important;
+  gap: 5px !important;
+}
+.workforce-panel .agent-row {
+  display: flex !important;
+  min-width: 0 !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  gap: 3px !important;
+  padding: 7px !important;
+  background: #070404 !important;
+  border: 1px solid #211010 !important;
+}
+.workforce-panel .agent-avatar {
+  width: 27px !important;
+  height: 27px !important;
+  font-size: 9px !important;
+}
+.workforce-panel .agent-copy strong {
+  font-size: 10px !important;
+}
+.workforce-panel .agent-copy span {
+  font-size: 8px !important;
+  max-width: 100% !important;
+}
+.workforce-panel .agent-state {
+  font-size: 8px !important;
+}
+.activity-terminal {
+  left: 1.2% !important;
+  bottom: 2% !important;
+  width: 28% !important;
+  height: 185px !important;
+}
+.activity-terminal .feed {
+  height: 140px !important;
+  background: #030303 !important;
+  border: 1px solid #211010 !important;
+  padding: 4px 7px !important;
+  font-family: Consolas, monospace !important;
+  font-size: 9px !important;
+}
+.activity-terminal .event-row {
+  grid-template-columns: 50px 80px 1fr !important;
+  padding: 3px 0 !important;
+  min-height: 0 !important;
+}
+.veylith-center {
+  left: 50% !important;
+  top: 43% !important;
+  width: min(41vw, 650px) !important;
+  height: min(65vh, 620px) !important;
+}
+.center-status {
+  bottom: 2% !important;
+  width: 390px !important;
+}
+.pipeline-zone {
+  left: 50% !important;
+  bottom: 2% !important;
+  width: 39% !important;
+}
+.project-intelligence {
+  position: absolute;
+  right: 1.2%;
+  top: 2%;
+  width: 29%;
+  height: 75%;
+  z-index: 8;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1.05fr 0.85fr 1.25fr 0.58fr;
+  gap: 7px;
+}
+.pi-panel {
+  min-width: 0;
+  overflow: hidden;
+  background: linear-gradient(145deg, #090505ed, #040303dc);
+  border-top: 1px solid #5a1919;
+  border-bottom: 1px solid #211010;
+  padding: 10px;
+  box-shadow: 0 14px 35px #0007;
+  backdrop-filter: blur(8px);
+}
+.pi-panel:before,
+.project-roadmap:before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 42px;
+  height: 1px;
+  background: #d5a447;
+  box-shadow: 0 0 8px #d5a447;
+}
+.pi-panel {
+  position: relative;
+}
+.pi-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 25px;
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  color: #e05a52;
+}
+.pi-head b {
+  font-size: 8px;
+  color: #a4938d;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pi-portfolio {
+  grid-row: 1/2;
+}
+.pi-velocity {
+  grid-row: 1/2;
+}
+.pi-workload {
+  grid-column: 1/3;
+  grid-row: 2/4;
+}
+.pi-forecast {
+  grid-column: 1/3;
+  grid-row: 4/5;
+}
+.pi-portfolio-body {
+  height: calc(100% - 25px);
+  display: grid;
+  grid-template-columns: 55% 45%;
+  align-items: center;
+}
+.pi-donut {
+  height: 100%;
+  min-height: 115px;
+}
+.pi-donut svg {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 0 7px #d3262620);
+}
+.pi-legend {
+  display: grid;
+  gap: 6px;
+}
+.pi-legend div {
+  display: grid;
+  grid-template-columns: 7px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 8px;
+  color: #a99791;
+}
+.pi-legend i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.pi-legend i.live {
+  background: #ff3535;
+  box-shadow: 0 0 7px #ff3535;
+}
+.pi-legend i.queued {
+  background: #d99a38;
+}
+.pi-legend i.done {
+  background: #55c47a;
+}
+.pi-legend i.failed {
+  background: #7c2020;
+}
+.pi-legend b {
+  font:
+    10px Consolas,
+    monospace;
+  color: #e9ddd7;
+}
+.pi-line {
+  height: calc(100% - 27px);
+  padding-top: 8px;
+}
+.pi-line svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+#piWorkload {
+  display: grid;
+  gap: 5px;
+  height: calc(100% - 28px);
+  align-content: center;
+}
+.pi-workload-row {
+  display: grid;
+  grid-template-columns: 78px 1fr 65px;
+  align-items: center;
+  gap: 7px;
+  min-height: 20px;
+}
+.pi-workload-row > span {
+  font-size: 8px;
+  color: #b5a5a0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pi-workload-row > div {
+  height: 6px;
+  background: #160909;
+  overflow: hidden;
+}
+.pi-workload-row > div i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #6e1111, #e52b2b, #d5a447);
+  box-shadow: 0 0 8px #d62828;
+}
+.pi-workload-row > b {
+  text-align: right;
+  font-size: 7px;
+  color: #8f7d77;
+}
+.pi-forecast-track {
+  height: 24px;
+  background: #130808;
+  position: relative;
+  margin: 8px 0 6px;
+  overflow: hidden;
+}
+.pi-forecast-track i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, #6c1010, #e52d2d, #d5a447);
+  box-shadow: 0 0 15px #df272744;
+  transition: width 0.5s;
+}
+.pi-forecast-track span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font:
+    10px Consolas,
+    monospace;
+  font-weight: 800;
+  color: #fff;
+}
+.pi-forecast small {
+  display: block;
+  font-size: 8px;
+  color: #9b8b85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-roadmap {
+  position: absolute;
+  z-index: 9;
+  right: 1.2%;
+  bottom: 2%;
+  width: 29%;
+  height: 185px;
+  background: linear-gradient(145deg, #090505ed, #040303dc);
+  border-top: 1px solid #5a1919;
+  border-bottom: 1px solid #211010;
+  padding: 10px;
+  box-shadow: 0 14px 35px #0007;
+  backdrop-filter: blur(8px);
+}
+.pi-roadmap-stages {
+  height: 125px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+.pi-road-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  color: #665955;
+}
+.pi-road-stage i {
+  position: relative;
+  z-index: 2;
+  margin: auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #0d0808;
+  border: 1px solid #392020;
+  font-style: normal;
+  font-size: 9px;
+}
+.pi-road-stage span {
+  display: block;
+  margin-top: 7px;
+  font-size: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pi-road-stage em {
+  position: absolute;
+  left: 50%;
+  top: 9px;
+  width: 100%;
+  height: 2px;
+  background: #2b1515;
+}
+.pi-road-stage.completed {
+  color: #61c780;
+}
+.pi-road-stage.completed i {
+  border-color: #2e7045;
+  background: #0a170e;
+}
+.pi-road-stage.completed em {
+  background: #2d6e43;
+}
+.pi-road-stage.working {
+  color: #ff554b;
+}
+.pi-road-stage.working i {
+  border-color: #d22c2c;
+  background: #240909;
+  box-shadow: 0 0 12px #e1272766;
+}
+.pi-road-stage.working em {
+  background: linear-gradient(90deg, #d52a2a, #2b1515);
+}
+.pi-road-stage.failed {
+  color: #ff3030;
+}
+.pi-road-stage.failed i {
+  border-color: #8d2020;
+}
+.legacy-project-panel,
+.legacy-task-panel {
+  display: none !important;
+}
+.legacy-runtime-rail {
+  display: none !important;
+}
+.telemetry-strip {
+  display: none !important;
+}
+.system-widget {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  width: 290px;
+  z-index: 80;
+  background: #060404ed;
+  border: 1px solid #391414;
+  box-shadow: 0 14px 45px #000b;
+  backdrop-filter: blur(10px);
+  user-select: none;
+}
+.system-widget-head {
+  height: 31px;
+  padding: 0 9px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: move;
+  border-bottom: 1px solid #241010;
+  color: #c74b45;
+  font-size: 9px;
+  letter-spacing: 1.6px;
+}
+.system-widget-head button {
+  width: 24px;
+  height: 22px;
+  border: 1px solid #381515;
+  background: #0d0606;
+  color: #b74a45;
+  cursor: pointer;
+}
+.system-widget-body {
+  padding: 7px;
+}
+.system-widget-charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+.system-widget .tiny-chart {
+  display: block !important;
+  height: 47px !important;
+  border: 1px solid #1c0e0e !important;
+  padding: 5px !important;
+}
+.system-widget .tiny-chart canvas {
+  left: 35px !important;
+  right: 3px !important;
+  top: 4px !important;
+  height: 36px !important;
+}
+.system-widget .legacy-system-rail {
+  display: block !important;
+  position: static !important;
+  width: auto !important;
+  margin-top: 5px !important;
+  padding: 5px 7px !important;
+}
+.system-widget.collapsed {
+  width: 120px;
+}
+.system-widget.collapsed .system-widget-body {
+  display: none;
+}
+.detail-deck {
+  margin-top: 0;
+}
+.v2-control-center {
+  display: none !important;
+}
+@media (max-width: 1350px) {
+  .main-terminal,
+  .workforce-panel,
+  .activity-terminal {
+    width: 30% !important;
+  }
+  .project-intelligence,
+  .project-roadmap {
+    width: 31%;
+  }
+  .veylith-center {
+    width: 42vw !important;
+  }
+  .pipeline-zone {
+    width: 36% !important;
+  }
+}
+@media (max-width: 1050px) {
+  .command-stage {
+    height: auto !important;
+    min-height: 1900px !important;
+    overflow: visible !important;
+  }
+  .main-terminal {
+    left: 0 !important;
+    top: 0 !important;
+    width: 49% !important;
+  }
+  .workforce-panel {
+    left: 0 !important;
+    top: 260px !important;
+    width: 49% !important;
+  }
+  .activity-terminal {
+    left: 0 !important;
+    top: 660px !important;
+    bottom: auto !important;
+    width: 49% !important;
+  }
+  .project-intelligence {
+    right: 0;
+    top: 0;
+    width: 49%;
+    height: 845px;
+  }
+  .project-roadmap {
+    right: 0;
+    top: 855px;
+    bottom: auto;
+    width: 49%;
+  }
+  .veylith-center {
+    top: 1150px !important;
+    width: 760px !important;
+    max-width: 96vw !important;
+    height: 650px !important;
+  }
+  .pipeline-zone {
+    bottom: 15px !important;
+    width: 96% !important;
+  }
+}
+@media (max-width: 700px) {
+  .command-stage {
+    min-height: 3000px !important;
+  }
+  .main-terminal,
+  .workforce-panel,
+  .activity-terminal,
+  .project-intelligence,
+  .project-roadmap {
+    left: 0 !important;
+    right: auto !important;
+    width: 100% !important;
+  }
+  .main-terminal {
+    top: 0 !important;
+  }
+  .workforce-panel {
+    top: 260px !important;
+  }
+  .activity-terminal {
+    top: 660px !important;
+  }
+  .project-intelligence {
+    top: 855px !important;
+    height: 930px;
+    grid-template-columns: 1fr;
+  }
+  .pi-portfolio,
+  .pi-velocity,
+  .pi-workload,
+  .pi-forecast {
+    grid-column: 1 !important;
+    grid-row: auto !important;
+  }
+  .project-roadmap {
+    top: 1795px !important;
+    height: 190px;
+  }
+  .veylith-center {
+    top: 2300px !important;
+  }
+  .workforce-panel .agent-team {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+  .system-widget {
+    width: 250px;
+  }
+}
+/* END VEYLITH PROJECT COMMAND CENTER V3 */
+
+/* VEYLITH CENTER CLEAN V4 */
+
+/* Remove duplicated project/status information from Veylith's feet */
+.center-status {
+  display: none !important;
+}
+
+/* Execution terminal live state */
+.terminal-title {
+  align-items: center !important;
+}
+.terminal-live {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+.terminal-live > b:last-child {
+  font-size: 9px !important;
+  color: #8f817c !important;
+}
+.terminal-agent-status {
+  display: flex !important;
+  align-items: center;
+  gap: 6px;
+  font:
+    700 9px Consolas,
+    monospace !important;
+  letter-spacing: 1px;
+  color: #9d8d87 !important;
+  white-space: nowrap;
+}
+.terminal-agent-status i {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #736863;
+  box-shadow: 0 0 7px #73686366;
+}
+.terminal-agent-status.working {
+  color: #ff5148 !important;
+}
+.terminal-agent-status.working i {
+  background: #ff3939;
+  box-shadow: 0 0 9px #ff2929;
+}
+.terminal-agent-status.completed {
+  color: #62c982 !important;
+}
+.terminal-agent-status.completed i {
+  background: #55c47a;
+  box-shadow: 0 0 9px #55c47a;
+}
+.terminal-agent-status.failed,
+.terminal-agent-status.cancelled {
+  color: #ff3b3b !important;
+}
+.terminal-agent-status.failed i,
+.terminal-agent-status.cancelled i {
+  background: #ff2929;
+  box-shadow: 0 0 9px #ff2929;
+}
+
+/* Clean central Veylith presentation */
+.veylith-center {
+  left: 50% !important;
+  top: 39% !important;
+  width: min(42vw, 680px) !important;
+  height: min(66vh, 650px) !important;
+}
+
+/* Stronger rotating clockwork behind Veylith */
+.scene-ring {
+  will-change: transform;
+  transform-origin: center center;
+}
+.ring-one {
+  animation: veylithClockSlow 52s linear infinite !important;
+}
+.ring-two {
+  animation: veylithClock 30s linear infinite !important;
+}
+.ring-three {
+  animation: veylithClockReverse 46s linear infinite !important;
+}
+@keyframes veylithClock {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+@keyframes veylithClockReverse {
+  from {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+}
+@keyframes veylithClockSlow {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+/* Activity now belongs directly below Veylith */
+.activity-terminal {
+  left: 32% !important;
+  right: auto !important;
+  top: auto !important;
+  bottom: 2% !important;
+  width: 36% !important;
+  height: 190px !important;
+  z-index: 10 !important;
+}
+.activity-terminal .feed {
+  height: 145px !important;
+}
+
+/* Pipeline no longer competes with Veylith/activity center */
+.pipeline-zone {
+  display: none !important;
+}
+
+@media (max-width: 1350px) {
+  .veylith-center {
+    top: 38% !important;
+    width: 40vw !important;
+  }
+  .activity-terminal {
+    left: 31% !important;
+    width: 38% !important;
+  }
+}
+
+@media (max-width: 1050px) {
+  .veylith-center {
+    left: 50% !important;
+    top: 1080px !important;
+    width: 720px !important;
+    max-width: 94vw !important;
+    height: 620px !important;
+  }
+  .activity-terminal {
+    left: 25% !important;
+    top: 1580px !important;
+    bottom: auto !important;
+    width: 50% !important;
+  }
+}
+
+@media (max-width: 700px) {
+  .veylith-center {
+    top: 2180px !important;
+  }
+  .activity-terminal {
+    left: 0 !important;
+    top: 2630px !important;
+    width: 100% !important;
+  }
+}
+
+/* END VEYLITH CENTER CLEAN V4 */
+
+/* VEYLITH LAYOUT V5 */
+
+/* Main screen gets enough room for the complete center terminal */
+.command-stage {
+  min-height: 900px !important;
+  height: min(930px, calc(100vh - 48px)) !important;
+}
+
+/* LEFT COLUMN */
+.main-terminal {
+  left: 1.2% !important;
+  top: 2% !important;
+  width: 28% !important;
+  height: 250px !important;
+}
+
+.workforce-panel {
+  left: 1.2% !important;
+  top: 31% !important;
+  width: 28% !important;
+  height: 390px !important;
+}
+
+/* Agent panel is the autonomous team, not runtime worker slots */
+.workforce-panel #workerCount {
+  font-size: 9px !important;
+}
+
+/* Reuse the existing project/task windows in the empty lower-left area */
+.legacy-project-panel.left-project-window,
+.legacy-task-panel.left-task-window {
+  display: block !important;
+  z-index: 9 !important;
+  top: auto !important;
+  bottom: 2% !important;
+  height: 180px !important;
+  padding: 9px !important;
+}
+
+.legacy-project-panel.left-project-window {
+  left: 1.2% !important;
+  right: auto !important;
+  width: 13.7% !important;
+}
+
+.legacy-task-panel.left-task-window {
+  left: 15.5% !important;
+  right: auto !important;
+  width: 13.7% !important;
+}
+
+.left-project-window .projects,
+.left-task-window .task-list {
+  height: 137px !important;
+}
+
+.left-project-window .project-row,
+.left-task-window .task-row {
+  padding: 6px 2px !important;
+}
+
+.left-project-window .project-head,
+.left-task-window .task-top {
+  font-size: 10px !important;
+}
+
+.left-project-window .project-meta,
+.left-task-window .task-meta {
+  font-size: 8px !important;
+}
+
+/* CENTER VEYLITH */
+.veylith-center {
+  left: 50% !important;
+  top: 36% !important;
+  width: min(41vw, 650px) !important;
+  height: min(62vh, 590px) !important;
+}
+
+/* Fully visible Activity Terminal centered under Veylith */
+.activity-terminal {
+  left: 32% !important;
+  right: auto !important;
+  top: 70% !important;
+  bottom: auto !important;
+  width: 36% !important;
+  height: 245px !important;
+  z-index: 12 !important;
+  padding: 10px !important;
+}
+
+.activity-terminal .feed {
+  height: 198px !important;
+  overflow: auto !important;
+  background: linear-gradient(180deg, #030303, #060202) !important;
+  border: 1px solid #261010 !important;
+  padding: 6px 8px !important;
+  font:
+    10px/1.45 Consolas,
+    monospace !important;
+}
+
+.activity-terminal .event-row {
+  grid-template-columns: 58px 100px minmax(0, 1fr) !important;
+  gap: 7px !important;
+  padding: 4px 0 !important;
+  min-height: 22px !important;
+}
+
+/* Give center terminal a stronger visual frame */
+.activity-terminal:after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  left: 8%;
+  right: 8%;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #8e2020, #d5a447, #8e2020, transparent);
+  box-shadow: 0 0 10px #d3262644;
+}
+
+/* Keep the removed center information removed */
+.center-status {
+  display: none !important;
+}
+
+/* Pipeline remains represented by roadmap on the right */
+.pipeline-zone {
+  display: none !important;
+}
+
+/* Keep right project intelligence clear */
+.project-intelligence {
+  right: 1.2% !important;
+}
+
+.project-roadmap {
+  right: 1.2% !important;
+}
+
+/* System widget should not sit over the main right-side graphs */
+.system-widget {
+  right: 14px;
+  bottom: 14px;
+}
+
+@media (max-width: 1350px) {
+  .main-terminal,
+  .workforce-panel {
+    width: 29% !important;
+  }
+  .legacy-project-panel.left-project-window {
+    width: 14.2% !important;
+  }
+  .legacy-task-panel.left-task-window {
+    left: 16% !important;
+    width: 14.2% !important;
+  }
+  .activity-terminal {
+    left: 31% !important;
+    width: 38% !important;
+  }
+  .veylith-center {
+    width: 40vw !important;
+  }
+}
+
+@media (max-width: 1050px) {
+  .command-stage {
+    min-height: 2200px !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .main-terminal {
+    left: 0 !important;
+    top: 0 !important;
+    width: 49% !important;
+  }
+  .workforce-panel {
+    left: 0 !important;
+    top: 260px !important;
+    width: 49% !important;
+  }
+  .legacy-project-panel.left-project-window {
+    left: 0 !important;
+    top: 660px !important;
+    bottom: auto !important;
+    width: 24% !important;
+  }
+  .legacy-task-panel.left-task-window {
+    left: 25% !important;
+    top: 660px !important;
+    bottom: auto !important;
+    width: 24% !important;
+  }
+  .veylith-center {
+    left: 50% !important;
+    top: 1130px !important;
+    width: 720px !important;
+    max-width: 94vw !important;
+    height: 610px !important;
+  }
+  .activity-terminal {
+    left: 25% !important;
+    top: 1580px !important;
+    bottom: auto !important;
+    width: 50% !important;
+  }
+}
+
+@media (max-width: 700px) {
+  .command-stage {
+    min-height: 3300px !important;
+  }
+  .main-terminal,
+  .workforce-panel,
+  .legacy-project-panel.left-project-window,
+  .legacy-task-panel.left-task-window,
+  .activity-terminal {
+    left: 0 !important;
+    width: 100% !important;
+  }
+  .main-terminal {
+    top: 0 !important;
+  }
+  .workforce-panel {
+    top: 260px !important;
+  }
+  .legacy-project-panel.left-project-window {
+    top: 660px !important;
+  }
+  .legacy-task-panel.left-task-window {
+    top: 850px !important;
+  }
+  .veylith-center {
+    top: 2230px !important;
+  }
+  .activity-terminal {
+    top: 2700px !important;
+  }
+}
+
+/* END VEYLITH LAYOUT V5 */
+
+/* VEYLITH WAIST TERMINAL V6 */
+
+/* Activity Terminal floats across Veylith's waist */
+.activity-terminal {
+  left: 32% !important;
+  top: 47% !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: 36% !important;
+  height: 245px !important;
+  z-index: 20 !important;
+  padding: 10px !important;
+
+  /* transparent glass */
+  background: rgba(5, 2, 2, 0.54) !important;
+  border-top: 1px solid rgba(210, 52, 42, 0.62) !important;
+  border-bottom: 1px solid rgba(112, 31, 26, 0.45) !important;
+  border-left: 1px solid rgba(80, 24, 21, 0.2) !important;
+  border-right: 1px solid rgba(80, 24, 21, 0.2) !important;
+
+  backdrop-filter: blur(2px) !important;
+  -webkit-backdrop-filter: blur(2px) !important;
+
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.28),
+    inset 0 1px rgba(255, 80, 55, 0.04) !important;
+}
+
+/* Header remains readable while still transparent */
+.activity-terminal .hud-title {
+  background: rgba(4, 1, 1, 0.3) !important;
+  position: relative;
+  z-index: 2;
+}
+
+/* Terminal body itself must not become opaque */
+.activity-terminal .feed {
+  height: 198px !important;
+  overflow: auto !important;
+  background: rgba(2, 1, 1, 0.38) !important;
+  border: 1px solid rgba(89, 26, 22, 0.42) !important;
+  padding: 6px 8px !important;
+  font:
+    10px/1.45 Consolas,
+    monospace !important;
+  box-shadow: inset 0 0 25px rgba(0, 0, 0, 0.16) !important;
+}
+
+/* Individual event rows stay transparent */
+.activity-terminal .event-row {
+  background: transparent !important;
+  border-bottom-color: rgba(91, 31, 27, 0.34) !important;
+}
+
+/* Let Veylith / weapons / clock remain visible through empty areas */
+.activity-terminal:before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgba(20, 2, 2, 0.34), rgba(8, 1, 1, 0.12) 25%, rgba(8, 1, 1, 0.08) 50%, rgba(8, 1, 1, 0.12) 75%, rgba(20, 2, 2, 0.34));
+  z-index: -1;
+}
+
+/* Thin red/gold terminal accent */
+.activity-terminal:after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  left: 7%;
+  right: 7%;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #8e2020, #d5a447, #8e2020, transparent);
+  box-shadow: 0 0 10px rgba(211, 38, 38, 0.24);
+}
+
+/* Keep Veylith visually behind the glass terminal */
+.veylith-center {
+  z-index: 5 !important;
+}
+
+/* Other center status remains removed */
+.center-status {
+  display: none !important;
+}
+
+/* Responsive fallback */
+@media (max-width: 1350px) {
+  .activity-terminal {
+    left: 31% !important;
+    width: 38% !important;
+    top: 48% !important;
+  }
+}
+
+@media (max-width: 1050px) {
+  .activity-terminal {
+    left: 25% !important;
+    top: 1370px !important;
+    width: 50% !important;
+  }
+}
+
+@media (max-width: 700px) {
+  .activity-terminal {
+    left: 0 !important;
+    top: 2460px !important;
+    width: 100% !important;
+  }
+}
+
+/* END VEYLITH WAIST TERMINAL V6 */
+
+/* VEYLITH ACTIVITY TERMINAL V7 */
+
+/* Large glass terminal crossing Veylith from waist downward */
+.activity-terminal {
+  left: 31% !important;
+  top: 43% !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: 38% !important;
+  height: 390px !important;
+  z-index: 20 !important;
+  padding: 10px !important;
+  background: rgba(5, 2, 2, 0.48) !important;
+  border-top: 1px solid rgba(222, 55, 45, 0.68) !important;
+  border-bottom: 1px solid rgba(126, 36, 28, 0.48) !important;
+  border-left: 1px solid rgba(85, 25, 20, 0.24) !important;
+  border-right: 1px solid rgba(85, 25, 20, 0.24) !important;
+  backdrop-filter: blur(1.5px) !important;
+  -webkit-backdrop-filter: blur(1.5px) !important;
+  box-shadow:
+    0 15px 45px rgba(0, 0, 0, 0.25),
+    inset 0 1px rgba(255, 90, 60, 0.04) !important;
+}
+
+.activity-terminal .hud-title {
+  height: 27px !important;
+  margin-bottom: 7px !important;
+  background: rgba(3, 1, 1, 0.18) !important;
+}
+
+/* Much taller event viewport */
+.activity-terminal .feed {
+  height: 338px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  scroll-behavior: smooth;
+  background: rgba(2, 1, 1, 0.28) !important;
+  border: 1px solid rgba(91, 27, 22, 0.36) !important;
+  padding: 7px 9px !important;
+  font:
+    10px/1.5 Consolas,
+    monospace !important;
+  scrollbar-width: thin;
+  scrollbar-color: #69201c rgba(0, 0, 0, 0.16);
+}
+
+.activity-terminal .feed::-webkit-scrollbar {
+  width: 6px;
+}
+
+.activity-terminal .feed::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.activity-terminal .feed::-webkit-scrollbar-thumb {
+  background: #69201c;
+  border-radius: 6px;
+}
+
+.activity-terminal .event-row {
+  grid-template-columns: 62px 105px minmax(0, 1fr) !important;
+  gap: 8px !important;
+  min-height: 24px !important;
+  padding: 4px 0 !important;
+  background: transparent !important;
+  border-bottom: 1px solid rgba(92, 29, 24, 0.29) !important;
+}
+
+.activity-terminal .event-row > span:last-child {
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+}
+
+/* Glass is intentionally transparent so Veylith remains visible */
+.activity-terminal:before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgba(20, 3, 3, 0.26), rgba(6, 1, 1, 0.07) 30%, rgba(4, 1, 1, 0.04) 50%, rgba(6, 1, 1, 0.07) 70%, rgba(20, 3, 3, 0.26));
+  z-index: -1;
+}
+
+.activity-terminal:after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  left: 5%;
+  right: 5%;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #8e2020, #d5a447, #8e2020, transparent);
+  box-shadow: 0 0 12px rgba(211, 38, 38, 0.28);
+}
+
+@media (max-width: 1350px) {
+  .activity-terminal {
+    left: 30% !important;
+    width: 40% !important;
+    height: 370px !important;
+  }
+  .activity-terminal .feed {
+    height: 318px !important;
+  }
+}
+
+/* END VEYLITH ACTIVITY TERMINAL V7 */
+
+/* VEYLITH CLARITY V8 */
+
+:root {
+  --v8-bg: #050303;
+  --v8-panel: rgba(12, 6, 6, 0.92);
+  --v8-panel2: rgba(16, 7, 7, 0.88);
+  --v8-line: #65211d;
+  --v8-line-hot: #a5362e;
+  --v8-gold: #e4b44f;
+  --v8-red: #ff4b42;
+  --v8-text: #f1e8e4;
+  --v8-soft: #c7b8b1;
+  --v8-muted: #998985;
+  --v8-green: #61d88a;
+  --v8-blue: #58b8ff;
+  --v8-cyan: #54e0db;
+  --v8-purple: #c685ff;
+  --v8-orange: #ff9c45;
+  --v8-yellow: #f2d15c;
+  --v8-pink: #ff78ad;
+}
+
+/* GLOBAL CLARITY */
+body {
+  color: var(--v8-text) !important;
+  background: radial-gradient(circle at 50% 38%, rgba(95, 8, 8, 0.17), transparent 37%), linear-gradient(180deg, #070303, #020202) !important;
+  font-weight: 500 !important;
+}
+
+.hud-panel,
+.pi-panel,
+.project-roadmap,
+.detail-card,
+.control-v2-panel,
+.left-project-window,
+.left-task-window {
+  background: linear-gradient(145deg, rgba(17, 7, 7, 0.94), rgba(6, 3, 3, 0.94)) !important;
+  border: 1px solid rgba(115, 34, 29, 0.72) !important;
+  border-top-color: rgba(211, 61, 48, 0.82) !important;
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.38),
+    inset 0 1px rgba(255, 96, 67, 0.05) !important;
+}
+
+/* Make separate cards visually obvious */
+.agent-row,
+.project-row,
+.task-row,
+.worker-row,
+.control-card,
+.connection-card,
+.health-row {
+  background: rgba(18, 8, 8, 0.78) !important;
+  border: 1px solid rgba(100, 32, 27, 0.58) !important;
+  box-shadow: inset 0 1px rgba(255, 80, 60, 0.035) !important;
+}
+
+.agent-row:hover,
+.project-row:hover,
+.task-row:hover {
+  background: rgba(34, 11, 11, 0.88) !important;
+  border-color: rgba(187, 53, 43, 0.8) !important;
+}
+
+/* Headings */
+.hud-title,
+.sub-title,
+.pi-head,
+.v2-title,
+.detail-title {
+  color: #ff665b !important;
+  font-weight: 800 !important;
+  letter-spacing: 1.25px !important;
+  font-size: 11px !important;
+}
+
+.hud-title b,
+.pi-head b,
+.sub-title b {
+  color: #d2c0b8 !important;
+  font-size: 9px !important;
+  font-weight: 700 !important;
+}
+
+/* Main readable text */
+.agent-copy strong,
+.project-head strong,
+.task-top strong,
+.worker-main strong,
+.current-project strong {
+  color: #fff7f2 !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+}
+
+.agent-copy span,
+.project-meta,
+.task-meta,
+.worker-main small,
+.pi-panel,
+.project-roadmap {
+  color: var(--v8-soft) !important;
+}
+
+.agent-copy span,
+.project-meta,
+.task-meta {
+  font-size: 9px !important;
+  line-height: 1.25 !important;
+}
+
+.agent-state,
+.status {
+  font-size: 9px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.55px !important;
+}
+
+/* Less wasted space */
+.hud-panel,
+.pi-panel,
+.project-roadmap,
+.detail-card {
+  padding: 7px !important;
+}
+
+.agent-performance .agent-team {
+  gap: 4px !important;
+}
+
+.workforce-panel .agent-row {
+  padding: 5px !important;
+  gap: 3px !important;
+}
+
+.project-row,
+.task-row,
+.worker-row {
+  padding: 5px !important;
+  margin: 2px 0 !important;
+}
+
+.pi-panel {
+  padding: 7px !important;
+}
+
+.pi-head {
+  height: 22px !important;
+}
+
+.pi-legend {
+  gap: 3px !important;
+}
+
+.workload-row {
+  gap: 5px !important;
+  min-height: 21px !important;
+}
+
+/* Stronger progress / graph presentation */
+.progress {
+  height: 5px !important;
+  background: #1e0b0b !important;
+  border: 1px solid #3c1513 !important;
+}
+
+.progress span {
+  background: linear-gradient(90deg, #b41f1f, #ff493b, #e4b44f) !important;
+  box-shadow: 0 0 9px rgba(255, 52, 42, 0.48) !important;
+}
+
+.workload-track {
+  background: #210b0b !important;
+  border: 1px solid #381411 !important;
+}
+
+.workload-fill {
+  background: linear-gradient(90deg, #c22424, #ff5545, #e6b44d) !important;
+  box-shadow: 0 0 8px rgba(255, 54, 42, 0.35) !important;
+}
+
+/* AUTONOMOUS AGENT STATE COLORS */
+.agent-state.working {
+  color: #56d8ff !important;
+  text-shadow: 0 0 8px rgba(86, 216, 255, 0.28);
+}
+
+.agent-state.waiting {
+  color: #d6c8c1 !important;
+}
+
+.agent-state.completed {
+  color: #67dd8e !important;
+}
+
+.agent-state.failed {
+  color: #ff5757 !important;
+}
+
+.agent-state.paused {
+  color: #d78aff !important;
+}
+
+/* GENERAL STATUS COLORS */
+.status.queued {
+  color: #f2c94c !important;
+}
+
+.status.claimed {
+  color: #58b8ff !important;
+}
+
+.status.running,
+.status.online,
+.status.active {
+  color: #52ded8 !important;
+}
+
+.status.completed,
+.status.verified,
+.status.released {
+  color: #62da88 !important;
+}
+
+.status.failed,
+.status.cancelled,
+.status.error {
+  color: #ff5757 !important;
+}
+
+.status.paused {
+  color: #c985ff !important;
+}
+
+.status.waiting,
+.status.waiting_ai {
+  color: #ff9c45 !important;
+}
+
+.status.retry,
+.status.retry_wait {
+  color: #ff78ad !important;
+}
+
+/* ACTIVITY TERMINAL */
+.activity-terminal {
+  background: rgba(7, 2, 2, 0.42) !important;
+  border: 1px solid rgba(171, 48, 39, 0.72) !important;
+  border-top: 2px solid rgba(237, 70, 54, 0.84) !important;
+}
+
+.activity-terminal .feed {
+  color: #eee5e1 !important;
+  font:
+    600 11px/1.42 Consolas,
+    monospace !important;
+  background: rgba(2, 1, 1, 0.23) !important;
+  border: 1px solid rgba(109, 31, 26, 0.48) !important;
+  padding: 5px 7px !important;
+}
+
+.activity-terminal .event-row {
+  grid-template-columns: 72px 132px minmax(0, 1fr) !important;
+  gap: 7px !important;
+  padding: 3px 2px !important;
+  min-height: 22px !important;
+  border-bottom: 1px solid rgba(110, 33, 27, 0.34) !important;
+}
+
+.activity-terminal .event-row > span:first-child {
+  color: #aaa09b !important;
+  font-weight: 600 !important;
+}
+
+.activity-terminal .event-row > span:last-child {
+  color: #f0e8e4 !important;
+  font-weight: 600 !important;
+}
+
+/* Event namespace: JOB / RECOVERY / AI / GIT / TASK etc */
+.event-type {
+  display: flex !important;
+  align-items: center;
+  white-space: nowrap;
+  font-weight: 800 !important;
+}
+
+.event-group {
+  color: #ff6158 !important;
+}
+
+.event-dot {
+  color: #71615d !important;
+}
+
+/* Every important action gets its own semantic color */
+.event-action {
+  font-weight: 900 !important;
+}
+
+.action-queued {
+  color: #f1c84c !important;
+}
+
+.action-claimed {
+  color: #56b8ff !important;
+}
+
+.action-running,
+.action-started {
+  color: #4ddbd5 !important;
+}
+
+.action-completed {
+  color: #62dc89 !important;
+}
+
+.action-failed,
+.action-error {
+  color: #ff5252 !important;
+}
+
+.action-cancelled {
+  color: #ff6f75 !important;
+}
+
+.action-paused {
+  color: #c883ff !important;
+}
+
+.action-resumed {
+  color: #53dfc2 !important;
+}
+
+.action-retry,
+.action-retrying,
+.action-retry_wait {
+  color: #ff78ad !important;
+}
+
+.action-reconciled {
+  color: #e7a94b !important;
+}
+
+.action-recovered,
+.action-recovery {
+  color: #78d9ff !important;
+}
+
+.action-created {
+  color: #9baeff !important;
+}
+
+.action-dispatched {
+  color: #5fe3b0 !important;
+}
+
+.action-assigned {
+  color: #b993ff !important;
+}
+
+.action-verified {
+  color: #7be39b !important;
+}
+
+.action-released,
+.action-published {
+  color: #e9bd52 !important;
+}
+
+.action-warning,
+.action-warn {
+  color: #ffab4c !important;
+}
+
+/* Event severity remains visible without replacing action colors */
+.event-row.warn {
+  border-left: 2px solid #ff9c45 !important;
+  padding-left: 5px !important;
+}
+
+.event-row.error,
+.event-row.fatal {
+  border-left: 2px solid #ff4747 !important;
+  padding-left: 5px !important;
+}
+
+/* TERMINAL SCROLLBAR */
+.activity-terminal .feed::-webkit-scrollbar {
+  width: 7px !important;
+}
+
+.activity-terminal .feed::-webkit-scrollbar-thumb {
+  background: #a1322b !important;
+  border: 1px solid #d15043 !important;
+}
+
+/* EXECUTION TERMINAL */
+#terminal {
+  color: #eee5e1 !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 1.45 !important;
+  background: rgba(3, 1, 1, 0.58) !important;
+}
+
+/* LEFT PROJECT/TASK CARDS */
+.left-project-window,
+.left-task-window {
+  background: rgba(12, 5, 5, 0.94) !important;
+}
+
+.left-project-window .projects,
+.left-task-window .task-list {
+  padding: 2px !important;
+}
+
+/* RIGHT GRAPH LABELS */
+.pi-legend span,
+.workload-label,
+.workload-state,
+.roadmap-label,
+.forecast-copy {
+  font-size: 9px !important;
+  font-weight: 700 !important;
+  color: #cfc0ba !important;
+}
+
+/* SYSTEM WIDGET - clearer but still secondary */
+.system-widget {
+  background: rgba(10, 5, 5, 0.95) !important;
+  border: 1px solid #6e211d !important;
+  color: #ddd1cb !important;
+}
+
+.system-widget-head {
+  color: #ff6258 !important;
+  font-weight: 800 !important;
+}
+
+.system-widget .health-value {
+  color: #f1e8e4 !important;
+  font-weight: 700 !important;
+}
+
+/* END VEYLITH CLARITY V8 */
+
+/* VEYLITH EVENT FAMILY COLORS V9 */
+
+.event-group {
+  font-weight: 900 !important;
+  text-shadow: 0 0 7px currentColor !important;
+}
+
+/* Each event family has its own identity */
+.event-group.group-job {
+  color: #4ea8ff !important;
+}
+
+.event-group.group-recovery {
+  color: #c77dff !important;
+}
+
+.event-group.group-task {
+  color: #39ddd5 !important;
+}
+
+.event-group.group-ai {
+  color: #ff78b7 !important;
+}
+
+.event-group.group-agent {
+  color: #ff9852 !important;
+}
+
+.event-group.group-worker {
+  color: #74c8ff !important;
+}
+
+.event-group.group-git {
+  color: #f0bd4e !important;
+}
+
+.event-group.group-github {
+  color: #f5d76e !important;
+}
+
+.event-group.group-project {
+  color: #ff665c !important;
+}
+
+.event-group.group-goal {
+  color: #ad8cff !important;
+}
+
+.event-group.group-lifecycle {
+  color: #e58bff !important;
+}
+
+.event-group.group-phase {
+  color: #57d6a1 !important;
+}
+
+.event-group.group-build {
+  color: #ff9e48 !important;
+}
+
+.event-group.group-test {
+  color: #58d68d !important;
+}
+
+.event-group.group-validation,
+.event-group.group-validator {
+  color: #44d9c5 !important;
+}
+
+.event-group.group-review,
+.event-group.group-reviewer {
+  color: #bf8cff !important;
+}
+
+.event-group.group-repair {
+  color: #ff785f !important;
+}
+
+.event-group.group-release {
+  color: #e7b84c !important;
+}
+
+.event-group.group-publication,
+.event-group.group-publisher {
+  color: #f3cc64 !important;
+}
+
+.event-group.group-security {
+  color: #ff5f75 !important;
+}
+
+.event-group.group-sandbox {
+  color: #65c7ff !important;
+}
+
+.event-group.group-system {
+  color: #b5c0ca !important;
+}
+
+.event-group.group-provider {
+  color: #73b8ff !important;
+}
+
+.event-group.group-terminal {
+  color: #a5d6ff !important;
+}
+
+.event-group.group-dispatch {
+  color: #54dfac !important;
+}
+
+.event-group.group-assignment {
+  color: #bb8cff !important;
+}
+
+/* Unknown event families remain readable but neutral */
+.event-group:not(
+  .group-job,
+  .group-recovery,
+  .group-task,
+  .group-ai,
+  .group-agent,
+  .group-worker,
+  .group-git,
+  .group-github,
+  .group-project,
+  .group-goal,
+  .group-lifecycle,
+  .group-phase,
+  .group-build,
+  .group-test,
+  .group-validation,
+  .group-validator,
+  .group-review,
+  .group-reviewer,
+  .group-repair,
+  .group-release,
+  .group-publication,
+  .group-publisher,
+  .group-security,
+  .group-sandbox,
+  .group-system,
+  .group-provider,
+  .group-terminal,
+  .group-dispatch,
+  .group-assignment
+) {
+  color: #d8cbc5 !important;
+}
+
+.event-dot {
+  color: #786b66 !important;
+  margin: 0 1px;
+}
+
+/* ACTIONS remain independently colored */
+
+.event-action.action-queued {
+  color: #ffd34e !important;
+}
+
+.event-action.action-claimed {
+  color: #4fb8ff !important;
+}
+
+.event-action.action-created {
+  color: #91a8ff !important;
+}
+
+.event-action.action-started,
+.event-action.action-running {
+  color: #41e1dc !important;
+}
+
+.event-action.action-completed {
+  color: #63e28c !important;
+}
+
+.event-action.action-failed,
+.event-action.action-error {
+  color: #ff4f58 !important;
+}
+
+.event-action.action-reconciled {
+  color: #f1a74d !important;
+}
+
+.event-action.action-recovered {
+  color: #66d4ff !important;
+}
+
+.event-action.action-retrying,
+.event-action.action-retry,
+.event-action.action-retry_wait {
+  color: #ff7bb6 !important;
+}
+
+.event-action.action-dispatched {
+  color: #50e3aa !important;
+}
+
+.event-action.action-assigned {
+  color: #c18cff !important;
+}
+
+.event-action.action-paused {
+  color: #cf85ff !important;
+}
+
+.event-action.action-resumed {
+  color: #50dfbc !important;
+}
+
+.event-action.action-verified {
+  color: #7ce69d !important;
+}
+
+.event-action.action-published,
+.event-action.action-released {
+  color: #f0c457 !important;
+}
+
+.event-action.action-cancelled {
+  color: #ff737b !important;
+}
+
+/* END VEYLITH EVENT FAMILY COLORS V9 */
+
+/* VEYLITH JOB COLOR V10 */
+
+/* JOB is always Veylith red */
+.activity-terminal .event-group.group-job {
+  color: #ff4b42 !important;
+  text-shadow:
+    0 0 5px rgba(255, 75, 66, 0.55),
+    0 0 10px rgba(190, 25, 20, 0.24) !important;
+}
+
+/* Keep every action visually independent */
+.activity-terminal .event-action.action-queued {
+  color: #ffd34e !important;
+}
+
+.activity-terminal .event-action.action-claimed {
+  color: #55baff !important;
+}
+
+.activity-terminal .event-action.action-reconciled {
+  color: #ff9d45 !important;
+}
+
+.activity-terminal .event-action.action-completed {
+  color: #5fe08b !important;
+}
+
+.activity-terminal .event-action.action-running,
+.activity-terminal .event-action.action-started {
+  color: #42ddd8 !important;
+}
+
+.activity-terminal .event-action.action-created {
+  color: #9b9fff !important;
+}
+
+.activity-terminal .event-action.action-retry,
+.activity-terminal .event-action.action-retrying,
+.activity-terminal .event-action.action-retry_wait {
+  color: #ff79b0 !important;
+}
+
+.activity-terminal .event-action.action-paused {
+  color: #ca83ff !important;
+}
+
+.activity-terminal .event-action.action-failed,
+.activity-terminal .event-action.action-error {
+  color: #ff313d !important;
+}
+
+/* Dot should not visually belong to either side */
+.activity-terminal .event-dot {
+  color: #8d7771 !important;
+  text-shadow: none !important;
+}
+
+/* END VEYLITH JOB COLOR V10 */
+
+/* VEYLITH COMPACT AGENTS PROJECT MONITOR V11 */
+
+/* Compact Agent Performance */
+.agent-performance {
+  height: auto !important;
+}
+
+.agent-performance .agent-team {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 3px !important;
+  padding: 3px !important;
+}
+
+.workforce-panel .agent-row,
+.agent-performance .agent-row {
+  min-height: 30px !important;
+  height: 30px !important;
+  padding: 3px 6px !important;
+  margin: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 5px !important;
+  background: rgba(14, 6, 6, 0.9) !important;
+  border: 1px solid rgba(102, 31, 27, 0.6) !important;
+}
+
+/* Completely remove avatar/abbreviation and secondary text */
+.agent-performance .agent-avatar,
+.agent-performance .agent-copy {
+  display: none !important;
+}
+
+.compact-agent-name {
+  display: block !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  color: #fff4ef !important;
+  font-size: 10px !important;
+  line-height: 1 !important;
+  font-weight: 800 !important;
+}
+
+.agent-performance .agent-state {
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+  font-size: 8px !important;
+  line-height: 1 !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.35px !important;
+}
+
+/* Strong status indication without wasting space */
+.agent-performance .agent-row.working {
+  border-color: #2ca8b1 !important;
+  background: rgba(10, 31, 33, 0.92) !important;
+  box-shadow: inset 2px 0 #43ddd8 !important;
+}
+
+.agent-performance .agent-row.queued {
+  border-color: #8b6a21 !important;
+  box-shadow: inset 2px 0 #e3b941 !important;
+}
+
+.agent-performance .agent-row.completed {
+  border-color: #286f45 !important;
+  box-shadow: inset 2px 0 #57d884 !important;
+}
+
+.agent-performance .agent-row.failed {
+  border-color: #9c2929 !important;
+  box-shadow: inset 2px 0 #ff4545 !important;
+}
+
+.agent-performance .agent-row.paused {
+  border-color: #704191 !important;
+  box-shadow: inset 2px 0 #bd7aff !important;
+}
+
+/* ALL VEYLITH PROJECTS */
+.all-project-monitor {
+  position: absolute !important;
+  left: 0 !important;
+  top: 570px !important;
+  width: 29% !important;
+  height: 285px !important;
+  z-index: 13 !important;
+  padding: 6px !important;
+  overflow: hidden !important;
+  background: linear-gradient(145deg, rgba(18, 7, 7, 0.97), rgba(5, 3, 3, 0.97)) !important;
+  border: 1px solid rgba(133, 38, 31, 0.78) !important;
+  border-top: 1px solid #d14b3f !important;
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.38),
+    inset 0 1px rgba(255, 94, 65, 0.05) !important;
+}
+
+.all-project-monitor .hud-title {
+  height: 24px !important;
+  padding: 0 2px 5px !important;
+  margin: 0 0 3px !important;
+}
+
+.all-project-monitor-list {
+  height: 245px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding-right: 2px !important;
+  scrollbar-width: thin;
+  scrollbar-color: #843029 rgba(0, 0, 0, 0.2);
+}
+
+.all-project-monitor-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.all-project-monitor-list::-webkit-scrollbar-thumb {
+  background: #843029;
+}
+
+.project-monitor-row {
+  position: relative;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 2px 8px !important;
+  min-height: 37px !important;
+  padding: 5px 6px 7px !important;
+  margin: 0 0 3px !important;
+  background: rgba(15, 7, 7, 0.9) !important;
+  border: 1px solid rgba(83, 28, 24, 0.62) !important;
+}
+
+.project-monitor-row.working {
+  background: linear-gradient(90deg, rgba(12, 40, 40, 0.92), rgba(15, 7, 7, 0.9) 38%) !important;
+  border-color: rgba(46, 165, 167, 0.7) !important;
+}
+
+.project-monitor-row.queued {
+  border-left: 2px solid #d8ac3e !important;
+}
+
+.project-monitor-row.idle {
+  border-left: 2px solid #786965 !important;
+}
+
+.project-monitor-row.completed {
+  border-left: 2px solid #55ce7c !important;
+}
+
+.project-monitor-row.failed {
+  border-left: 2px solid #ff4545 !important;
+}
+
+.project-monitor-row.paused {
+  border-left: 2px solid #b873e5 !important;
+}
+
+.project-monitor-main {
+  min-width: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.project-monitor-main strong {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  color: #f8efeb !important;
+  font-size: 9px !important;
+  line-height: 1.15 !important;
+  font-weight: 800 !important;
+}
+
+.project-monitor-dot {
+  width: 7px !important;
+  height: 7px !important;
+  flex: 0 0 7px !important;
+  border-radius: 50% !important;
+  background: #776965 !important;
+}
+
+.project-monitor-dot.working {
+  background: #4be0da !important;
+  box-shadow: 0 0 8px rgba(75, 224, 218, 0.7) !important;
+  animation: projectWorkingPulse 1.4s ease-in-out infinite;
+}
+
+.project-monitor-dot.queued {
+  background: #e2b83e !important;
+}
+
+.project-monitor-dot.completed {
+  background: #58d782 !important;
+}
+
+.project-monitor-dot.failed {
+  background: #ff4949 !important;
+}
+
+.project-monitor-dot.paused {
+  background: #c17cf0 !important;
+}
+
+.project-monitor-right {
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+}
+
+.project-monitor-progress {
+  color: #c6b7b1 !important;
+  font:
+    700 8px/1 Consolas,
+    monospace !important;
+}
+
+.project-monitor-status {
+  min-width: 57px !important;
+  text-align: right !important;
+  font-size: 8px !important;
+  line-height: 1 !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.3px !important;
+}
+
+.project-monitor-status.working {
+  color: #50e0da !important;
+}
+
+.project-monitor-status.queued {
+  color: #e9bf45 !important;
+}
+
+.project-monitor-status.idle {
+  color: #b4a5a0 !important;
+}
+
+.project-monitor-status.completed {
+  color: #5dde88 !important;
+}
+
+.project-monitor-status.failed {
+  color: #ff5353 !important;
+}
+
+.project-monitor-status.paused {
+  color: #c786f0 !important;
+}
+
+.project-monitor-bar {
+  position: absolute !important;
+  left: 6px !important;
+  right: 6px !important;
+  bottom: 3px !important;
+  height: 2px !important;
+  background: #24100e !important;
+  overflow: hidden !important;
+}
+
+.project-monitor-bar i {
+  display: block !important;
+  height: 100% !important;
+  background: linear-gradient(90deg, #a82222, #f04437, #e1ad3f) !important;
+}
+
+.project-monitor-row.completed .project-monitor-bar i {
+  background: #51ca78 !important;
+}
+
+.project-monitor-row.working .project-monitor-bar i {
+  background: linear-gradient(90deg, #29a9a6, #4be0da) !important;
+}
+
+@keyframes projectWorkingPulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+
+/* END VEYLITH COMPACT AGENTS PROJECT MONITOR V11 */
+
+/* VEYLITH PROJECT GRID V12 */
+
+/* Project monitor now occupies much less vertical space */
+.all-project-monitor {
+  height: 160px !important;
+  top: 570px !important;
+  padding: 5px !important;
+}
+
+.all-project-monitor .hud-title {
+  height: 21px !important;
+  padding: 0 2px 3px !important;
+  margin: 0 0 3px !important;
+}
+
+/* THREE PROJECT COLUMNS */
+.all-project-monitor-list {
+  height: 126px !important;
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  grid-auto-rows: 56px !important;
+  align-content: start !important;
+  gap: 4px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding: 1px 2px 2px 1px !important;
+}
+
+.project-monitor-row {
+  min-width: 0 !important;
+  min-height: 56px !important;
+  height: 56px !important;
+  margin: 0 !important;
+  padding: 5px 5px 8px !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  grid-template-rows: 1fr auto !important;
+  gap: 3px 4px !important;
+}
+
+.project-monitor-main {
+  min-width: 0 !important;
+  gap: 4px !important;
+}
+
+.project-monitor-main strong {
+  font-size: 8px !important;
+  line-height: 1.15 !important;
+  font-weight: 800 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.project-monitor-dot {
+  width: 6px !important;
+  height: 6px !important;
+  flex: 0 0 6px !important;
+}
+
+.project-monitor-right {
+  gap: 4px !important;
+}
+
+.project-monitor-progress {
+  font-size: 7px !important;
+}
+
+.project-monitor-status {
+  min-width: 0 !important;
+  font-size: 7px !important;
+  letter-spacing: 0.15px !important;
+}
+
+.project-monitor-bar {
+  left: 5px !important;
+  right: 5px !important;
+  bottom: 4px !important;
+  height: 2px !important;
+}
+
+/* Also make autonomous agents denser */
+.workforce-panel {
+  height: 165px !important;
+}
+
+.agent-performance .agent-team {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 3px !important;
+  padding: 2px !important;
+}
+
+.workforce-panel .agent-row,
+.agent-performance .agent-row {
+  height: 28px !important;
+  min-height: 28px !important;
+  padding: 2px 5px !important;
+}
+
+.compact-agent-name {
+  font-size: 9px !important;
+}
+
+.agent-performance .agent-state {
+  font-size: 7px !important;
+}
+
+/* Pull project monitor upward after shrinking agents */
+.all-project-monitor {
+  top: 48% !important;
+}
+
+/* END VEYLITH PROJECT GRID V12 */
+
+/* VEYLITH LAYOUT CLEANUP V13 */
+
+/* =========================================================
+   LEFT COLUMN
+   ========================================================= */
+
+/* Execution Terminal */
+.main-terminal {
+  left: 1.4% !important;
+  top: 1.5% !important;
+  width: 28.2% !important;
+  height: 250px !important;
+  padding: 7px !important;
+}
+
+/* Agent Performance - 9 visible agents */
+.workforce-panel,
+.agent-performance {
+  left: 1.4% !important;
+  top: 30.5% !important;
+  width: 28.2% !important;
+  height: 188px !important;
+  min-height: 188px !important;
+  max-height: 188px !important;
+  padding: 6px !important;
+  overflow: visible !important;
+}
+
+.agent-performance .hud-title {
+  height: 23px !important;
+  margin: 0 0 4px !important;
+  padding: 0 2px 4px !important;
+}
+
+.agent-performance .agent-team {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  grid-template-rows: repeat(3, 42px) !important;
+  grid-auto-rows: 42px !important;
+  gap: 4px !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  padding: 0 !important;
+}
+
+.workforce-panel .agent-row,
+.agent-performance .agent-row {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-items: center !important;
+  min-width: 0 !important;
+  width: auto !important;
+  height: 42px !important;
+  min-height: 42px !important;
+  max-height: 42px !important;
+  margin: 0 !important;
+  padding: 3px 5px !important;
+  gap: 3px !important;
+  overflow: hidden !important;
+}
+
+.agent-performance .agent-avatar,
+.agent-performance .agent-copy {
+  display: none !important;
+}
+
+.compact-agent-name {
+  width: 100% !important;
+  display: block !important;
+  color: #fff4ef !important;
+  font-size: 9px !important;
+  font-weight: 800 !important;
+  line-height: 1.05 !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.agent-performance .agent-state {
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  font-size: 7px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  text-align: center !important;
+  letter-spacing: 0.35px !important;
+}
+
+/* =========================================================
+   ALL PROJECTS
+   ========================================================= */
+
+.all-project-monitor {
+  left: 1.4% !important;
+  top: 52.5% !important;
+  bottom: auto !important;
+  width: 28.2% !important;
+  height: 164px !important;
+  min-height: 164px !important;
+  max-height: 164px !important;
+  padding: 6px !important;
+  overflow: hidden !important;
+}
+
+.all-project-monitor .hud-title {
+  height: 23px !important;
+  margin: 0 0 4px !important;
+  padding: 0 2px 4px !important;
+}
+
+.all-project-monitor-list {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  grid-auto-rows: 58px !important;
+  align-content: start !important;
+  gap: 4px !important;
+  width: 100% !important;
+  height: 128px !important;
+  padding: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+.project-monitor-row {
+  width: auto !important;
+  min-width: 0 !important;
+  height: 58px !important;
+  min-height: 58px !important;
+  max-height: 58px !important;
+  margin: 0 !important;
+  padding: 5px 5px 8px !important;
+}
+
+.project-monitor-main {
+  min-width: 0 !important;
+}
+
+.project-monitor-main strong {
+  font-size: 8px !important;
+  line-height: 1.05 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.project-monitor-right {
+  gap: 3px !important;
+}
+
+.project-monitor-progress,
+.project-monitor-status {
+  font-size: 7px !important;
+}
+
+/* These became redundant after All Veylith Projects */
+.legacy-project-panel.left-project-window,
+.legacy-task-panel.left-task-window {
+  display: none !important;
+}
+
+/* =========================================================
+   CENTER
+   ========================================================= */
+
+.veylith-center {
+  left: 50% !important;
+  top: 36% !important;
+  width: min(40vw, 650px) !important;
+  height: min(64vh, 610px) !important;
+}
+
+/* Preserve the large transparent activity terminal */
+.activity-terminal {
+  left: 31% !important;
+  top: 43% !important;
+  width: 38% !important;
+  height: 390px !important;
+  z-index: 20 !important;
+}
+
+.activity-terminal .feed {
+  height: 338px !important;
+}
+
+/* =========================================================
+   RIGHT PROJECT INTELLIGENCE
+   ========================================================= */
+
+.project-intelligence {
+  left: auto !important;
+  right: 1.4% !important;
+  top: 1.5% !important;
+  width: 28.2% !important;
+}
+
+.project-roadmap {
+  left: auto !important;
+  right: 1.4% !important;
+  width: 28.2% !important;
+}
+
+/* Keep graph/card spacing compact */
+.project-intelligence .pi-panel {
+  padding: 6px !important;
+}
+
+.project-intelligence .pi-head {
+  height: 22px !important;
+  margin-bottom: 4px !important;
+}
+
+.workload-row {
+  min-height: 22px !important;
+  margin: 0 !important;
+}
+
+/* =========================================================
+   SYSTEM MONITOR
+   ========================================================= */
+
+/* Keep system monitor secondary and out of the graph center */
+.system-widget {
+  position: fixed !important;
+  right: 12px !important;
+  bottom: 12px !important;
+  width: 255px !important;
+  max-height: 260px !important;
+  z-index: 60 !important;
+}
+
+/* =========================================================
+   STAGE
+   ========================================================= */
+
+.command-stage {
+  min-height: 900px !important;
+  height: min(930px, calc(100vh - 48px)) !important;
+  overflow: hidden !important;
+}
+
+/* =========================================================
+   MEDIUM SCREEN
+   ========================================================= */
+
+@media (max-width: 1350px) {
+  .main-terminal,
+  .workforce-panel,
+  .all-project-monitor {
+    left: 1% !important;
+    width: 29% !important;
+  }
+
+  .project-intelligence,
+  .project-roadmap {
+    right: 1% !important;
+    width: 29% !important;
+  }
+
+  .activity-terminal {
+    left: 30% !important;
+    width: 40% !important;
+  }
+}
+
+/* =========================================================
+   SMALL SCREEN
+   ========================================================= */
+
+@media (max-width: 1050px) {
+  .command-stage {
+    min-height: 2200px !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .main-terminal {
+    left: 0 !important;
+    top: 0 !important;
+    width: 49% !important;
+  }
+
+  .workforce-panel {
+    left: 0 !important;
+    top: 260px !important;
+    width: 49% !important;
+  }
+
+  .all-project-monitor {
+    left: 0 !important;
+    top: 460px !important;
+    width: 49% !important;
+  }
+
+  .veylith-center {
+    left: 50% !important;
+    top: 1050px !important;
+    width: 700px !important;
+    max-width: 94vw !important;
+  }
+
+  .activity-terminal {
+    left: 25% !important;
+    top: 1180px !important;
+    width: 50% !important;
+  }
+}
+
+/* END VEYLITH LAYOUT CLEANUP V13 */
+
+/* VEYLITH LEFT DASHBOARD V14 */
+
+/* =========================================================
+   AGENT PERFORMANCE - NO INDIVIDUAL BOXES
+   ========================================================= */
+
+.workforce-panel {
+  height: 176px !important;
+}
+
+.agent-performance .agent-team {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  grid-template-rows: repeat(3, 42px) !important;
+  gap: 0 !important;
+  padding: 0 !important;
+  border-top: 1px solid rgba(105, 35, 29, 0.62) !important;
+  border-left: 1px solid rgba(105, 35, 29, 0.32) !important;
+}
+
+.workforce-panel .agent-row,
+.agent-performance .agent-row {
+  position: relative !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-items: flex-start !important;
+
+  width: auto !important;
+  min-width: 0 !important;
+
+  height: 42px !important;
+  min-height: 42px !important;
+  max-height: 42px !important;
+
+  margin: 0 !important;
+  padding: 4px 7px !important;
+  gap: 3px !important;
+
+  background: transparent !important;
+  border: 0 !important;
+  border-right: 1px solid rgba(105, 35, 29, 0.46) !important;
+  border-bottom: 1px solid rgba(105, 35, 29, 0.46) !important;
+
+  box-shadow: none !important;
+}
+
+/* remove old status card effects */
+.agent-performance .agent-row.working,
+.agent-performance .agent-row.queued,
+.agent-performance .agent-row.completed,
+.agent-performance .agent-row.failed,
+.agent-performance .agent-row.paused {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.compact-agent-name {
+  width: 100% !important;
+  color: #fff5f0 !important;
+  font-size: 9px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+  text-align: left !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+/* status + colored dot */
+.agent-performance .agent-state {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 5px !important;
+
+  width: 100% !important;
+  margin: 0 !important;
+
+  font-size: 7px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  text-align: left !important;
+  letter-spacing: 0.45px !important;
+}
+
+.agent-status-dot {
+  display: inline-block !important;
+  width: 6px !important;
+  height: 6px !important;
+  flex: 0 0 6px !important;
+  border-radius: 50% !important;
+  background: #9b8c86;
+}
+
+.agent-state.working .agent-status-dot {
+  background: #43ddd8 !important;
+  box-shadow: 0 0 7px rgba(67, 221, 216, 0.8) !important;
+}
+
+.agent-state.queued .agent-status-dot {
+  background: #e4b83f !important;
+  box-shadow: 0 0 6px rgba(228, 184, 63, 0.55) !important;
+}
+
+.agent-state.waiting .agent-status-dot {
+  background: #8f817c !important;
+}
+
+.agent-state.completed .agent-status-dot {
+  background: #59dc84 !important;
+  box-shadow: 0 0 6px rgba(89, 220, 132, 0.55) !important;
+}
+
+.agent-state.failed .agent-status-dot {
+  background: #ff4b4b !important;
+  box-shadow: 0 0 7px rgba(255, 75, 75, 0.65) !important;
+}
+
+.agent-state.paused .agent-status-dot {
+  background: #c27cf0 !important;
+  box-shadow: 0 0 6px rgba(194, 124, 240, 0.55) !important;
+}
+
+/* =========================================================
+   PROJECT MONITOR
+   ========================================================= */
+
+.all-project-monitor {
+  top: 51% !important;
+  height: 164px !important;
+}
+
+/* =========================================================
+   PROJECT EXECUTION OVERVIEW
+   ========================================================= */
+
+.project-execution-overview {
+  position: absolute !important;
+  left: 1.4% !important;
+  top: 70.5% !important;
+  width: 28.2% !important;
+  height: 172px !important;
+  z-index: 13 !important;
+  padding: 6px !important;
+
+  background: linear-gradient(145deg, rgba(17, 7, 7, 0.95), rgba(5, 3, 3, 0.96)) !important;
+
+  border: 1px solid rgba(115, 34, 29, 0.72) !important;
+  border-top: 1px solid rgba(211, 61, 48, 0.85) !important;
+}
+
+.project-execution-overview .hud-title {
+  height: 23px !important;
+  margin: 0 0 5px !important;
+  padding: 0 2px 4px !important;
+}
+
+.project-execution-visual {
+  display: grid !important;
+  grid-template-columns: 1.2fr 0.8fr !important;
+  gap: 9px !important;
+  height: 132px !important;
+}
+
+.execution-distribution {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  gap: 5px !important;
+}
+
+.execution-segment {
+  display: grid !important;
+  grid-template-columns: 78px minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.execution-segment-head {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  gap: 4px !important;
+
+  color: #cfc0ba !important;
+  font-size: 7px !important;
+  font-weight: 800 !important;
+}
+
+.execution-segment-head span {
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+}
+
+.execution-segment-head b {
+  color: #fff4ef !important;
+  font-size: 8px !important;
+}
+
+.execution-dot {
+  display: inline-block !important;
+  width: 6px !important;
+  height: 6px !important;
+  flex: 0 0 6px !important;
+  border-radius: 50% !important;
+}
+
+.execution-dot.working {
+  background: #43ddd8 !important;
+  box-shadow: 0 0 7px rgba(67, 221, 216, 0.65) !important;
+}
+
+.execution-dot.queued {
+  background: #e4b83f !important;
+}
+
+.execution-dot.idle {
+  background: #8d7d77 !important;
+}
+
+.execution-dot.completed {
+  background: #58d981 !important;
+}
+
+.execution-dot.failed {
+  background: #ff4a4a !important;
+}
+
+.execution-dot.paused {
+  background: #bf79ec !important;
+}
+
+.execution-track {
+  height: 5px !important;
+  overflow: hidden !important;
+  background: #1c0b0a !important;
+  border: 1px solid rgba(70, 24, 21, 0.75) !important;
+}
+
+.execution-track > i {
+  display: block !important;
+  height: 100% !important;
+}
+
+.execution-track > i.working {
+  background: #43ddd8 !important;
+}
+
+.execution-track > i.queued {
+  background: #e4b83f !important;
+}
+
+.execution-track > i.idle {
+  background: #81736e !important;
+}
+
+.execution-track > i.completed {
+  background: #58d981 !important;
+}
+
+.execution-track > i.failed {
+  background: #ff4a4a !important;
+}
+
+.execution-track > i.paused {
+  background: #bf79ec !important;
+}
+
+/* currently executing project */
+.execution-now {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-items: flex-start !important;
+
+  min-width: 0 !important;
+  padding: 8px !important;
+
+  background: rgba(13, 6, 6, 0.72) !important;
+  border-left: 1px solid rgba(107, 34, 29, 0.7) !important;
+}
+
+.execution-now-label {
+  display: flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+
+  margin-bottom: 7px !important;
+
+  color: #b8aaa4 !important;
+  font-size: 7px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.5px !important;
+}
+
+.execution-now strong {
+  color: #fff4ef !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  line-height: 1.25 !important;
+
+  overflow: hidden !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 3 !important;
+  -webkit-box-orient: vertical !important;
+}
+
+.execution-now.working strong {
+  color: #6ee5df !important;
+}
+
+/* END VEYLITH LEFT DASHBOARD V14 */
+
+/* VEYLITH DUAL TERMINALS V15 */
+
+/* Top-left technical runtime terminal */
+.main-terminal .hud-title > span {
+  font-size: 0 !important;
+}
+
+.main-terminal .hud-title > span:after {
+  content: "RUNTIME TERMINAL";
+  font-size: 11px !important;
+  color: #ff5b51 !important;
+  font-weight: 900 !important;
+  letter-spacing: 1.2px !important;
+}
+
+#terminal {
+  font:
+    600 10px/1.45 Consolas,
+    monospace !important;
+  color: #d8ccc7 !important;
+  background: rgba(2, 1, 1, 0.72) !important;
+  white-space: pre-wrap !important;
+  overflow-y: auto !important;
+}
+
+/* Center human-readable development terminal */
+.activity-terminal .hud-title > span {
+  font-size: 0 !important;
+}
+
+.activity-terminal .hud-title > span:after {
+  content: "DEVELOPMENT TERMINAL";
+  font-size: 11px !important;
+  color: #ff6258 !important;
+  font-weight: 900 !important;
+  letter-spacing: 1.25px !important;
+}
+
+.activity-terminal .hud-title > b {
+  font-size: 0 !important;
+}
+
+.activity-terminal .hud-title > b:after {
+  content: "AUTONOMOUS TEAM";
+  font-size: 9px !important;
+  color: #d8c6bd !important;
+}
+
+.activity-terminal .feed {
+  display: block !important;
+  font-family: Consolas, monospace !important;
+}
+
+.development-event {
+  display: grid !important;
+  grid-template-columns: 72px 92px minmax(0, 1fr) !important;
+  align-items: start !important;
+  gap: 8px !important;
+  min-height: 26px !important;
+  padding: 5px 3px !important;
+  border-bottom: 1px solid rgba(105, 32, 27, 0.31) !important;
+  background: transparent !important;
+}
+
+.development-time {
+  color: #9d918c !important;
+  font-size: 9px !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+}
+
+.development-role {
+  font-size: 9px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.4px !important;
+  white-space: nowrap !important;
+}
+
+.development-message {
+  color: #f4ebe7 !important;
+  font-size: 10px !important;
+  font-weight: 650 !important;
+  line-height: 1.35 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+}
+
+.role-architect {
+  color: #e4b84e !important;
+}
+
+.role-planner {
+  color: #b995ff !important;
+}
+
+.role-developer {
+  color: #ff6258 !important;
+}
+
+.role-validator {
+  color: #4dded6 !important;
+}
+
+.role-reviewer {
+  color: #cf8cff !important;
+}
+
+.role-diagnostic {
+  color: #ff9c4d !important;
+}
+
+.role-repair {
+  color: #ff7180 !important;
+}
+
+.role-versioning {
+  color: #67bfff !important;
+}
+
+.role-publisher {
+  color: #64df8d !important;
+}
+
+.role-veylith {
+  color: #d9c8c0 !important;
+}
+
+.development-empty {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 100% !important;
+  color: #8f817c !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.3px !important;
+}
+
+/* END VEYLITH DUAL TERMINALS V15 */
+
+/* VEYLITH TERMINAL COLORS V16 */
+
+/* =========================
+   TOP LEFT RUNTIME TERMINAL
+   ========================= */
+
+#terminal {
+  display: block !important;
+  padding: 5px 7px !important;
+  font-family: Consolas, monospace !important;
+  white-space: normal !important;
+}
+
+.runtime-line {
+  display: grid !important;
+  grid-template-columns: 68px 120px minmax(0, 1fr) !important;
+  align-items: start !important;
+  gap: 7px !important;
+  min-height: 23px !important;
+  padding: 4px 2px !important;
+  border-bottom: 1px solid rgba(92, 30, 26, 0.28) !important;
+}
+
+.runtime-time {
+  color: #887b76 !important;
+  font-size: 8px !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+}
+
+.runtime-type {
+  display: flex !important;
+  align-items: center !important;
+  min-width: 0 !important;
+  font-size: 9px !important;
+  font-weight: 900 !important;
+  white-space: nowrap !important;
+}
+
+.runtime-type i {
+  color: #76645e !important;
+  font-style: normal !important;
+  padding: 0 1px !important;
+}
+
+.runtime-group,
+.runtime-action {
+  font-size: 9px !important;
+  font-weight: 900 !important;
+}
+
+.runtime-message {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  color: #cfc3be !important;
+  font-size: 8px !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+}
+
+.runtime-empty {
+  padding: 10px !important;
+  color: #857772 !important;
+  font-size: 9px !important;
+}
+
+/* EVENT FAMILY COLORS */
+
+.runtime-group.group-job {
+  color: #ff5147 !important;
+  text-shadow: 0 0 7px rgba(255, 81, 71, 0.35) !important;
+}
+
+.runtime-group.group-recovery {
+  color: #c47aff !important;
+  text-shadow: 0 0 7px rgba(196, 122, 255, 0.35) !important;
+}
+
+.runtime-group.group-worker,
+.runtime-group.group-worker_slots {
+  color: #48d8df !important;
+}
+
+.runtime-group.group-queue {
+  color: #e8bc46 !important;
+}
+
+.runtime-group.group-provider {
+  color: #5ba9ff !important;
+}
+
+.runtime-group.group-sandbox {
+  color: #ff9847 !important;
+}
+
+.runtime-group.group-system {
+  color: #d1c6c1 !important;
+}
+
+.runtime-group.group-terminal {
+  color: #ed756b !important;
+}
+
+.runtime-group.group-runtime {
+  color: #c3b4ae !important;
+}
+
+/* ACTION COLORS */
+
+.runtime-action.action-queued {
+  color: #ffd64f !important;
+}
+
+.runtime-action.action-claimed,
+.runtime-action.action-started,
+.runtime-action.action-running {
+  color: #52b9ff !important;
+}
+
+.runtime-action.action-completed,
+.runtime-action.action-done,
+.runtime-action.action-success,
+.runtime-action.action-verified {
+  color: #5dde89 !important;
+}
+
+.runtime-action.action-reconciled,
+.runtime-action.action-synchronized {
+  color: #ff9b47 !important;
+}
+
+.runtime-action.action-created {
+  color: #a8a3ff !important;
+}
+
+.runtime-action.action-retry,
+.runtime-action.action-retrying {
+  color: #ff78b2 !important;
+}
+
+.runtime-action.action-paused {
+  color: #c782f0 !important;
+}
+
+.runtime-action.action-failed,
+.runtime-action.action-error {
+  color: #ff3f49 !important;
+  text-shadow: 0 0 6px rgba(255, 63, 73, 0.35) !important;
+}
+
+.runtime-action.action-cancelled {
+  color: #db6565 !important;
+}
+
+/* =========================
+   CENTER DEVELOPMENT TERMINAL
+   ========================= */
+
+.activity-terminal {
+  background: rgba(7, 2, 2, 0.48) !important;
+  backdrop-filter: blur(1.5px) !important;
+}
+
+.activity-terminal .feed {
+  background: rgba(3, 1, 1, 0.16) !important;
+}
+
+.development-event {
+  grid-template-columns: 70px 92px minmax(0, 1fr) !important;
+  min-height: 27px !important;
+  padding: 5px 4px !important;
+}
+
+.development-time {
+  color: #a89a94 !important;
+  font-size: 9px !important;
+}
+
+.development-role {
+  font-size: 9px !important;
+}
+
+.development-message {
+  color: #fff4ef !important;
+  font-size: 10px !important;
+  font-weight: 650 !important;
+}
+
+/* VEYLITH fallback is visible, not dim */
+.role-veylith {
+  color: #e8b94c !important;
+  text-shadow: 0 0 6px rgba(232, 185, 76, 0.25) !important;
+}
+
+/* END VEYLITH TERMINAL COLORS V16 */
+
+/* VEYLITH SYSTEM MONITOR V21 */
+
+/* Manual controls are no longer part of autonomous monitoring UI */
+button[data-action="demo"],
+button[data-action="new-task"],
+#runDemo,
+#newTask,
+#newTaskButton,
+.run-demo,
+.new-task-button,
+.development-task-button {
+  display: none !important;
+}
+
+/* System monitor lives in the former button area */
+.system-widget {
+  position: fixed !important;
+  top: 52px !important;
+  right: 116px !important;
+  left: auto !important;
+  bottom: auto !important;
+  z-index: 1000 !important;
+  width: 250px !important;
+  max-height: 340px !important;
+  margin: 0 !important;
+  transform: none !important;
+  box-shadow:
+    0 10px 35px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(117, 28, 23, 0.32) !important;
+}
+
+/* Header is the drag handle */
+.system-widget .system-widget-header,
+.system-widget .widget-header,
+.system-widget > .hud-title {
+  cursor: grab !important;
+  user-select: none !important;
+}
+
+.system-widget .system-widget-header:active,
+.system-widget .widget-header:active,
+.system-widget > .hud-title:active {
+  cursor: grabbing !important;
+}
+
+/* Collapsed form */
+.system-widget.collapsed {
+  width: 92px !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  max-height: 28px !important;
+  overflow: hidden !important;
+  background: rgba(8, 3, 3, 0.9) !important;
+  border: 1px solid rgba(134, 34, 28, 0.75) !important;
+  box-shadow:
+    0 5px 18px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 87, 74, 0.08) !important;
+}
+
+.system-widget.collapsed .system-widget-header,
+.system-widget.collapsed .widget-header,
+.system-widget.collapsed > .hud-title {
+  height: 26px !important;
+  min-height: 26px !important;
+  padding: 0 8px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border: 0 !important;
+}
+
+/* Hide original collapsed title text */
+.system-widget.collapsed .system-widget-header > *,
+.system-widget.collapsed .widget-header > *,
+.system-widget.collapsed > .hud-title > * {
+  display: none !important;
+}
+
+/* Exact collapsed identity requested */
+.system-widget.collapsed .system-widget-header:after,
+.system-widget.collapsed .widget-header:after,
+.system-widget.collapsed > .hud-title:after {
+  content: "SYSTEM  ●";
+  display: block !important;
+  color: #d9ccc6 !important;
+  font-size: 9px !important;
+  font-weight: 900 !important;
+  letter-spacing: 1px !important;
+  white-space: nowrap !important;
+}
+
+.system-widget.collapsed .system-widget-header:before,
+.system-widget.collapsed .widget-header:before,
+.system-widget.collapsed > .hud-title:before {
+  content: "";
+  display: none !important;
+}
+
+/* Green live dot */
+.system-widget.collapsed .system-widget-header:after,
+.system-widget.collapsed .widget-header:after,
+.system-widget.collapsed > .hud-title:after {
+  text-shadow: 40px 0 7px rgba(70, 235, 122, 0.75) !important;
+}
+
+/* Expanded widget opens downward */
+.system-widget:not(.collapsed) {
+  width: 250px !important;
+  height: auto !important;
+  max-height: 340px !important;
+  overflow: auto !important;
+  background: rgba(7, 3, 3, 0.97) !important;
+}
+
+/* Keep header compact when expanded */
+.system-widget:not(.collapsed) .system-widget-header,
+.system-widget:not(.collapsed) .widget-header,
+.system-widget:not(.collapsed) > .hud-title {
+  min-height: 30px !important;
+}
+
+/* Don't let old bottom-right rules win */
+body .system-widget {
+  bottom: auto !important;
+}
+
+/* END VEYLITH SYSTEM MONITOR V21 */
+
+/* VEYLITH AUTONOMOUS CONTROLS V22 */
+
+/*
+Keep the controls in the DOM because task-modal.js depends on them.
+Only hide the two manual dashboard triggers visually.
+*/
+
+#newTask,
+#demo {
+  display: none !important;
+}
+
+/* END VEYLITH AUTONOMOUS CONTROLS V22 */
+
+/* VEYLITH SYSTEM WIDGET V24 */
+
+.system-widget {
+  position: fixed !important;
+  z-index: 10000 !important;
+  margin: 0 !important;
+  transform: none !important;
+}
+
+/* button-size collapsed monitor */
+.system-widget.collapsed {
+  width: 94px !important;
+  height: 28px !important;
+  min-width: 94px !important;
+  min-height: 28px !important;
+  max-width: 94px !important;
+  max-height: 28px !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  background: rgba(8, 3, 3, 0.97) !important;
+  border: 1px solid rgba(139, 38, 31, 0.85) !important;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.55) !important;
+}
+
+.system-widget.collapsed > * {
+  display: none !important;
+}
+
+/* dedicated drag/click surface */
+.system-widget .system-widget-v24-handle {
+  display: flex !important;
+  position: absolute !important;
+  inset: 0 !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 50 !important;
+  cursor: grab !important;
+  user-select: none !important;
+  touch-action: none !important;
+  color: #e7d8d1 !important;
+  font-size: 9px !important;
+  line-height: 1 !important;
+  font-weight: 900 !important;
+  letter-spacing: 1px !important;
+  white-space: nowrap !important;
+}
+
+.system-widget .system-widget-v24-handle:active {
+  cursor: grabbing !important;
+}
+
+.system-widget.collapsed .system-widget-v24-handle {
+  display: flex !important;
+}
+
+/* expanded monitor */
+.system-widget:not(.collapsed) {
+  width: 250px !important;
+  height: auto !important;
+  max-height: 360px !important;
+  overflow: auto !important;
+  background: rgba(8, 3, 3, 0.98) !important;
+  border: 1px solid rgba(139, 38, 31, 0.82) !important;
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.65) !important;
+}
+
+/* when expanded, handle becomes a small drag strip */
+.system-widget:not(.collapsed) .system-widget-v24-handle {
+  position: sticky !important;
+  top: 0 !important;
+  width: 100% !important;
+  height: 27px !important;
+  min-height: 27px !important;
+  background: rgba(13, 5, 5, 0.96) !important;
+  border-bottom: 1px solid rgba(117, 31, 26, 0.55) !important;
+}
+
+/* END VEYLITH SYSTEM WIDGET V24 */
+
+/* VEYLITH LEFT FINAL V33 */
+
+/*
+ONE LEFT EDGE.
+Logo, subtitle and every left panel use 20px.
+*/
+.identity {
+  position: absolute !important;
+  top: 12px !important;
+  left: 20px !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.identity h1,
+.identity .brand,
+.identity .logo {
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 16px !important;
+}
+
+.identity .subtitle,
+.identity .tagline,
+.identity p {
+  margin: 5px 0 0 !important;
+  padding: 0 !important;
+  line-height: 9px !important;
+}
+
+/*
+Visible layout:
+logo starts       12px
+logo height       16px
+subtitle gap       5px
+subtitle height    9px
+subtitle bottom   42px
+wanted gap         8px
+terminal top      50px
+*/
+.main-terminal {
+  position: absolute !important;
+  left: 20px !important;
+  top: 50px !important;
+  width: 458px !important;
+  height: 238px !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+}
+
+/* 8px after Runtime Terminal */
+.workforce-panel,
+.agent-performance {
+  position: absolute !important;
+  left: 20px !important;
+  top: 296px !important;
+  width: 458px !important;
+  height: 176px !important;
+  box-sizing: border-box !important;
+}
+
+/* 8px after Agent Performance */
+.all-project-monitor {
+  position: absolute !important;
+  left: 20px !important;
+  top: 480px !important;
+  width: 458px !important;
+  box-sizing: border-box !important;
+}
+
+/* 8px after project monitor */
+.project-execution-overview {
+  position: absolute !important;
+  left: 20px !important;
+  top: 654px !important;
+  width: 458px !important;
+  box-sizing: border-box !important;
+}
+
+/* END VEYLITH LEFT FINAL V33 */
+
+/* VEYLITH LEFT GAP FINAL V34 */
+
+/* Logo/subtitle stay exactly where they are */
+
+/* Subtitle currently finishes around 42px.
+   Runtime Terminal starts 8px later. */
+.main-terminal {
+  left: 20px !important;
+  top: 50px !important;
+  width: 458px !important;
+  height: 238px !important;
+  margin: 0 !important;
+}
+
+/* Exactly 8px after Runtime Terminal */
+.workforce-panel,
+.agent-performance {
+  left: 20px !important;
+  top: 296px !important;
+  width: 458px !important;
+  height: 176px !important;
+  margin: 0 !important;
+}
+
+/* Exactly 8px after Agent Performance */
+.all-project-monitor {
+  left: 20px !important;
+  top: 480px !important;
+  width: 458px !important;
+  margin: 0 !important;
+}
+
+/* Keep the remaining left stack compact */
+.project-execution-overview {
+  left: 20px !important;
+  top: 654px !important;
+  width: 458px !important;
+  margin: 0 !important;
+}
+
+/* END VEYLITH LEFT GAP FINAL V34 */
+
+/* VEYLITH RESPONSIVE DASHBOARD V35 */
+
+html,
+body {
+  min-width: 0 !important;
+}
+
+body.v35-responsive {
+  overflow-x: hidden !important;
+}
+
+.v35-responsive .command-stage {
+  position: relative !important;
+  display: block !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 0 14px 14px !important;
+  overflow: visible !important;
+  box-sizing: border-box !important;
+}
+
+.v35-dashboard {
+  display: grid;
+  grid-template-columns: minmax(330px, 28%) minmax(480px, 1fr) minmax(360px, 30%);
+  gap: 12px;
+  width: 100%;
+  max-width: 1920px;
+  margin: 0 auto;
+  align-items: start;
+  box-sizing: border-box;
+}
+
+.v35-column {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ==========================================================
+   LEFT
+   ========================================================== */
+
+.v35-left {
+  align-self: start;
+}
+
+.v35-left-header {
+  display: flex;
+  align-items: flex-start;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.v35-left-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.v35-responsive .v35-left .identity {
+  position: static !important;
+  inset: auto !important;
+  transform: none !important;
+  width: auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.v35-responsive .v35-left .main-terminal,
+.v35-responsive .v35-left .workforce-panel,
+.v35-responsive .v35-left .agent-performance,
+.v35-responsive .v35-left .all-project-monitor,
+.v35-responsive .v35-left .project-execution-overview {
+  position: relative !important;
+  inset: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  transform: none !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.v35-responsive .v35-left .main-terminal {
+  height: 238px !important;
+  min-height: 238px !important;
+}
+
+.v35-responsive .v35-left .workforce-panel,
+.v35-responsive .v35-left .agent-performance {
+  height: auto !important;
+  min-height: 174px !important;
+}
+
+.v35-responsive .v35-left .all-project-monitor {
+  height: auto !important;
+  min-height: 160px !important;
+}
+
+.v35-responsive .v35-left .project-execution-overview {
+  height: auto !important;
+  min-height: 120px !important;
+}
+
+.v35-responsive .main-terminal #terminal {
+  height: calc(100% - 38px) !important;
+  overflow: auto !important;
+}
+
+/* ==========================================================
+   CENTER
+   ========================================================== */
+
+.v35-center {
+  min-height: 830px;
+  position: relative;
+}
+
+.v35-scene-wrap {
+  position: relative;
+  width: 100%;
+  height: 500px;
+  min-height: 500px;
+  overflow: visible;
+}
+
+.v35-responsive .v35-center .veylith-center {
+  position: relative !important;
+  inset: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  transform: none !important;
+  width: 100% !important;
+  max-width: none !important;
+  height: 500px !important;
+  margin: 0 !important;
+}
+
+.v35-responsive .v35-center .activity-terminal {
+  position: relative !important;
+  inset: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  transform: none !important;
+  width: 100% !important;
+  max-width: none !important;
+  height: 310px !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+  z-index: 20 !important;
+}
+
+.v35-responsive .v35-center .activity-terminal .feed {
+  height: 258px !important;
+  max-height: 258px !important;
+  overflow: auto !important;
+}
+
+/* ==========================================================
+   RIGHT
+   ========================================================== */
+
+.v35-right {
+  min-width: 0;
+}
+
+.v35-responsive .v35-right .project-intelligence,
+.v35-responsive .v35-right .project-roadmap {
+  position: relative !important;
+  inset: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  transform: none !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.v35-responsive .v35-right .project-intelligence {
+  height: auto !important;
+  min-height: 620px !important;
+}
+
+.v35-responsive .v35-right .project-roadmap {
+  height: auto !important;
+  min-height: 170px !important;
+}
+
+/* Keep intelligence itself grid-based and fluid */
+.v35-responsive .project-intelligence {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  gap: 8px !important;
+}
+
+.v35-responsive .project-intelligence > * {
+  min-width: 0 !important;
+}
+
+/* ==========================================================
+   OLD FLOATING MAIN-LAYOUT ELEMENTS
+   ========================================================== */
+
+.v35-responsive .pipeline-zone {
+  display: none !important;
+}
+
+.v35-responsive .center-status {
+  display: none !important;
+}
+
+/*
+System widget intentionally remains fixed/draggable.
+It is the only dashboard element allowed to float.
+*/
+.v35-responsive .system-widget {
+  z-index: 1000 !important;
+}
+
+/* ==========================================================
+   RESPONSIVE
+   ========================================================== */
+
+@media (max-width: 1450px) {
+  .v35-dashboard {
+    grid-template-columns: minmax(310px, 30%) minmax(420px, 1fr) minmax(330px, 31%);
+  }
+  .v35-scene-wrap,
+  .v35-responsive .v35-center .veylith-center {
+    height: 460px !important;
+    min-height: 460px;
+  }
+  .v35-center {
+    min-height: 790px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .v35-dashboard {
+    grid-template-columns: minmax(300px, 38%) minmax(0, 1fr);
+    grid-template-areas:
+      "left center"
+      "right right";
+  }
+  .v35-left {
+    grid-area: left;
+  }
+  .v35-center {
+    grid-area: center;
+  }
+  .v35-right {
+    grid-area: right;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .v35-responsive .v35-right .project-intelligence {
+    min-height: 0 !important;
+  }
+}
+
+@media (max-width: 820px) {
+  .v35-responsive .command-stage {
+    padding: 0 10px 12px !important;
+  }
+  .v35-dashboard {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .v35-left,
+  .v35-center,
+  .v35-right {
+    width: 100%;
+  }
+  .v35-center {
+    min-height: 0;
+  }
+  .v35-scene-wrap,
+  .v35-responsive .v35-center .veylith-center {
+    height: 480px !important;
+    min-height: 480px;
+  }
+  .v35-responsive .v35-center .activity-terminal {
+    height: 300px !important;
+  }
+  .v35-responsive .v35-center .activity-terminal .feed {
+    height: 248px !important;
+    max-height: 248px !important;
+  }
+  .v35-responsive .project-intelligence {
+    grid-template-columns: 1fr !important;
+  }
+  .v35-responsive .pi-portfolio,
+  .v35-responsive .pi-velocity,
+  .v35-responsive .pi-workload,
+  .v35-responsive .pi-forecast {
+    grid-column: auto !important;
+    grid-row: auto !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .v35-responsive .command-stage {
+    padding: 0 6px 8px !important;
+  }
+  .v35-dashboard,
+  .v35-column,
+  .v35-left-content {
+    gap: 6px;
+  }
+  .v35-responsive .v35-left .main-terminal {
+    height: 220px !important;
+    min-height: 220px !important;
+  }
+  .v35-scene-wrap,
+  .v35-responsive .v35-center .veylith-center {
+    height: 390px !important;
+    min-height: 390px;
+  }
+  .v35-responsive .v35-center .activity-terminal {
+    height: 280px !important;
+  }
+  .v35-responsive .v35-center .activity-terminal .feed {
+    height: 228px !important;
+    max-height: 228px !important;
+  }
+  .v35-responsive .workforce-panel .agent-team,
+  .v35-responsive .agent-performance .agent-team {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+/* END VEYLITH RESPONSIVE DASHBOARD V35 */
+
+/* VEYLITH RESPONSIVE POLISH V36 */
+
+/* Remove wasted space above the dashboard */
+.v35-responsive .command-stage {
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+}
+
+.v35-dashboard {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+  align-items: start !important;
+}
+
+/* Logo begins at the top of the left column */
+.v35-left,
+.v35-left-header,
+.v35-left-content {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
+
+.v35-responsive .v35-left .identity {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+  align-self: flex-start !important;
+}
+
+.v35-responsive .v35-left .identity > *:first-child {
+  margin-top: 0 !important;
+}
+
+/* Keep a small intentional gap between branding and Runtime Terminal */
+.v35-left-header {
+  margin-bottom: 6px !important;
+}
+
+/* ==========================================================
+   LARGER VEYLITH
+   ========================================================== */
+
+.v35-center {
+  min-height: 830px !important;
+  overflow: visible !important;
+}
+
+.v35-scene-wrap {
+  height: 560px !important;
+  min-height: 560px !important;
+  overflow: visible !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.v35-responsive .v35-center .veylith-center {
+  width: 112% !important;
+  height: 560px !important;
+  min-height: 560px !important;
+  max-width: none !important;
+  flex: 0 0 112% !important;
+  overflow: visible !important;
+}
+
+/* ==========================================================
+   DEVELOPMENT TERMINAL OVER VEYLITH WAIST
+   Remains in Flex flow. Negative margin creates overlap.
+   No absolute positioning.
+   ========================================================== */
+
+.v35-responsive .v35-center .activity-terminal {
+  position: relative !important;
+  inset: auto !important;
+  width: 94% !important;
+  align-self: center !important;
+  height: 300px !important;
+  margin: -145px auto 0 !important;
+  z-index: 30 !important;
+  background: linear-gradient(180deg, rgba(8, 3, 3, 0.8), rgba(5, 2, 2, 0.74)) !important;
+  backdrop-filter: blur(2px) !important;
+  -webkit-backdrop-filter: blur(2px) !important;
+}
+
+.v35-responsive .v35-center .activity-terminal .feed {
+  height: 248px !important;
+  max-height: 248px !important;
+  background: rgba(3, 1, 1, 0.5) !important;
+}
+
+/* Character stays visible through terminal */
+.v35-responsive .activity-terminal,
+.v35-responsive .activity-terminal .feed {
+  box-shadow: none !important;
+}
+
+/* Keep terminal readable while allowing Veylith behind it */
+.v35-responsive .activity-terminal .event-row {
+  position: relative;
+  z-index: 2;
+}
+
+/* Right column remains aligned with the top */
+.v35-right {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
+
+/* ==========================================================
+   MEDIUM
+   ========================================================== */
+
+@media (max-width: 1450px) {
+  .v35-scene-wrap {
+    height: 525px !important;
+    min-height: 525px !important;
+  }
+
+  .v35-responsive .v35-center .veylith-center {
+    width: 110% !important;
+    flex-basis: 110% !important;
+    height: 525px !important;
+    min-height: 525px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal {
+    width: 96% !important;
+    margin-top: -125px !important;
+  }
+}
+
+/* ==========================================================
+   TABLET
+   ========================================================== */
+
+@media (max-width: 1180px) {
+  .v35-scene-wrap {
+    height: 510px !important;
+    min-height: 510px !important;
+  }
+
+  .v35-responsive .v35-center .veylith-center {
+    width: 108% !important;
+    flex-basis: 108% !important;
+    height: 510px !important;
+    min-height: 510px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal {
+    width: 96% !important;
+    margin-top: -105px !important;
+  }
+}
+
+/* ==========================================================
+   MOBILE
+   Do not heavily overlap when stacked vertically.
+   ========================================================== */
+
+@media (max-width: 820px) {
+  .v35-scene-wrap {
+    height: 520px !important;
+    min-height: 520px !important;
+  }
+
+  .v35-responsive .v35-center .veylith-center {
+    width: 100% !important;
+    flex-basis: 100% !important;
+    height: 520px !important;
+    min-height: 520px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal {
+    width: 100% !important;
+    margin-top: -75px !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .v35-scene-wrap {
+    height: 420px !important;
+    min-height: 420px !important;
+  }
+
+  .v35-responsive .v35-center .veylith-center {
+    height: 420px !important;
+    min-height: 420px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal {
+    margin-top: -35px !important;
+    height: 280px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal .feed {
+    height: 228px !important;
+    max-height: 228px !important;
+  }
+}
+
+/* END VEYLITH RESPONSIVE POLISH V36 */
+
+/* VEYLITH HEALTH SPACE V37 */
+
+/*
+Center composition:
+
+[ future Veylith Health graph ]
+[          Veylith           ]
+[ Development Terminal overlap ]
+*/
+
+/* Reserve real layout space above Veylith for health telemetry */
+.v35-responsive .v35-center {
+  padding-top: 78px !important;
+  min-height: 930px !important;
+  box-sizing: border-box !important;
+}
+
+/* Slightly more breathing room before character/halo begins */
+.v35-responsive .v35-center .v35-scene-wrap {
+  height: 565px !important;
+  min-height: 565px !important;
+  margin: 0 !important;
+  overflow: visible !important;
+}
+
+/* Keep Veylith large */
+.v35-responsive .v35-center .veylith-center {
+  width: 114% !important;
+  flex: 0 0 114% !important;
+  height: 565px !important;
+  min-height: 565px !important;
+  max-width: none !important;
+}
+
+/* Taller Development Terminal */
+.v35-responsive .v35-center .activity-terminal {
+  width: 94% !important;
+  height: 350px !important;
+  min-height: 350px !important;
+  margin: -135px auto 0 !important;
+  align-self: center !important;
+  flex: 0 0 auto !important;
+  z-index: 30 !important;
+}
+
+/* Give the log area the extra height */
+.v35-responsive .v35-center .activity-terminal .feed {
+  height: 298px !important;
+  min-height: 298px !important;
+  max-height: 298px !important;
+  overflow-y: auto !important;
+}
+
+/* Keep terminal translucent over the lower Veylith character */
+.v35-responsive .v35-center .activity-terminal {
+  background: linear-gradient(180deg, rgba(8, 3, 3, 0.8), rgba(5, 2, 2, 0.72)) !important;
+  backdrop-filter: blur(2px) !important;
+  -webkit-backdrop-filter: blur(2px) !important;
+}
+
+.v35-responsive .v35-center .activity-terminal .feed {
+  background: rgba(3, 1, 1, 0.48) !important;
+}
+
+/* Future health graph will occupy this upper breathing room.
+   Nothing fake is rendered there yet. */
+
+/* Medium desktop */
+@media (max-width: 1450px) {
+  .v35-responsive .v35-center {
+    padding-top: 68px !important;
+    min-height: 900px !important;
+  }
+
+  .v35-responsive .v35-center .v35-scene-wrap {
+    height: 535px !important;
+    min-height: 535px !important;
+  }
+
+  .v35-responsive .v35-center .veylith-center {
+    width: 112% !important;
+    flex-basis: 112% !important;
+    height: 535px !important;
+    min-height: 535px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal {
+    height: 335px !important;
+    min-height: 335px !important;
+    margin-top: -120px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal .feed {
+    height: 283px !important;
+    min-height: 283px !important;
+    max-height: 283px !important;
+  }
+}
+
+/* Tablet */
+@media (max-width: 1180px) {
+  .v35-responsive .v35-center {
+    padding-top: 55px !important;
+    min-height: 860px !important;
+  }
+
+  .v35-responsive .v35-center .v35-scene-wrap {
+    height: 510px !important;
+    min-height: 510px !important;
+  }
+
+  .v35-responsive .v35-center .veylith-center {
+    width: 108% !important;
+    flex-basis: 108% !important;
+    height: 510px !important;
+    min-height: 510px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal {
+    width: 96% !important;
+    height: 325px !important;
+    min-height: 325px !important;
+    margin-top: -100px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal .feed {
+    height: 273px !important;
+    min-height: 273px !important;
+    max-height: 273px !important;
+  }
+}
+
+/* Mobile */
+@media (max-width: 820px) {
+  .v35-responsive .v35-center {
+    padding-top: 36px !important;
+    min-height: 0 !important;
+  }
+
+  .v35-responsive .v35-center .v35-scene-wrap {
+    height: 500px !important;
+    min-height: 500px !important;
+  }
+
+  .v35-responsive .v35-center .veylith-center {
+    width: 100% !important;
+    flex-basis: 100% !important;
+    height: 500px !important;
+    min-height: 500px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal {
+    width: 100% !important;
+    height: 320px !important;
+    min-height: 320px !important;
+    margin-top: -65px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal .feed {
+    height: 268px !important;
+    min-height: 268px !important;
+    max-height: 268px !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .v35-responsive .v35-center {
+    padding-top: 25px !important;
+  }
+
+  .v35-responsive .v35-center .v35-scene-wrap {
+    height: 410px !important;
+    min-height: 410px !important;
+  }
+
+  .v35-responsive .v35-center .veylith-center {
+    height: 410px !important;
+    min-height: 410px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal {
+    height: 300px !important;
+    min-height: 300px !important;
+    margin-top: -30px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal .feed {
+    height: 248px !important;
+    min-height: 248px !important;
+    max-height: 248px !important;
+  }
+}
+
+/* END VEYLITH HEALTH SPACE V37 */
+
+/* VEYLITH TERMINAL V38 */
+
+/*
+Development Terminal:
+- begins across Veylith waist
+- extends downward
+- transparent enough to retain Veylith/halo visibility
+- remains inside center Flex flow
+*/
+
+.v35-responsive .v35-center {
+  min-height: 930px !important;
+  overflow: visible !important;
+}
+
+/* Preserve upper space for future Veylith Health graph */
+.v35-responsive .v35-center {
+  padding-top: 78px !important;
+}
+
+.v35-responsive .v35-center .v35-scene-wrap {
+  height: 565px !important;
+  min-height: 565px !important;
+  overflow: visible !important;
+}
+
+/* DEVELOPMENT TERMINAL */
+.v35-responsive .v35-center .activity-terminal {
+  position: relative !important;
+  inset: auto !important;
+  width: 96% !important;
+
+  /* Pull terminal upward to waist */
+  margin: -245px auto 0 !important;
+
+  /* Large marked terminal area */
+  height: 470px !important;
+  min-height: 470px !important;
+
+  align-self: center !important;
+  flex: 0 0 auto !important;
+  z-index: 30 !important;
+
+  /* Transparent dark glass */
+  background: linear-gradient(180deg, rgba(10, 3, 3, 0.61) 0%, rgba(7, 2, 2, 0.68) 45%, rgba(5, 1, 1, 0.74) 100%) !important;
+
+  border: 1px solid rgba(179, 45, 36, 0.82) !important;
+
+  box-shadow:
+    0 0 0 1px rgba(78, 13, 13, 0.28),
+    0 10px 35px rgba(0, 0, 0, 0.2) !important;
+
+  backdrop-filter: blur(1.5px) !important;
+  -webkit-backdrop-filter: blur(1.5px) !important;
+
+  overflow: hidden !important;
+}
+
+/* Header stays translucent too */
+.v35-responsive .v35-center .activity-terminal .section-title,
+.v35-responsive .v35-center .activity-terminal .panel-title,
+.v35-responsive .v35-center .activity-terminal > header {
+  background: rgba(8, 2, 2, 0.34) !important;
+}
+
+/* Main log surface */
+.v35-responsive .v35-center .activity-terminal .feed {
+  height: 418px !important;
+  min-height: 418px !important;
+  max-height: 418px !important;
+
+  background: rgba(2, 1, 1, 0.42) !important;
+
+  border-color: rgba(92, 25, 21, 0.58) !important;
+
+  overflow-y: auto !important;
+
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Individual rows should NOT become opaque */
+.v35-responsive .v35-center .activity-terminal .event-row {
+  background: transparent !important;
+}
+
+/* Subtle row separators */
+.v35-responsive .v35-center .activity-terminal .event-row {
+  border-bottom-color: rgba(106, 32, 27, 0.32) !important;
+}
+
+/* Preserve text readability */
+.v35-responsive .v35-center .activity-terminal .event-row > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* Medium desktop */
+@media (max-width: 1450px) {
+  .v35-responsive .v35-center {
+    padding-top: 68px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal {
+    width: 96% !important;
+    height: 445px !important;
+    min-height: 445px !important;
+    margin-top: -220px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal .feed {
+    height: 393px !important;
+    min-height: 393px !important;
+    max-height: 393px !important;
+  }
+}
+
+/* Tablet */
+@media (max-width: 1180px) {
+  .v35-responsive .v35-center {
+    padding-top: 55px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal {
+    width: 97% !important;
+    height: 420px !important;
+    min-height: 420px !important;
+    margin-top: -180px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal .feed {
+    height: 368px !important;
+    min-height: 368px !important;
+    max-height: 368px !important;
+  }
+}
+
+/* Mobile */
+@media (max-width: 820px) {
+  .v35-responsive .v35-center {
+    padding-top: 36px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal {
+    width: 100% !important;
+    height: 390px !important;
+    min-height: 390px !important;
+    margin-top: -110px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal .feed {
+    height: 338px !important;
+    min-height: 338px !important;
+    max-height: 338px !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .v35-responsive .v35-center {
+    padding-top: 25px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal {
+    height: 350px !important;
+    min-height: 350px !important;
+    margin-top: -55px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal .feed {
+    height: 298px !important;
+    min-height: 298px !important;
+    max-height: 298px !important;
+  }
+}
+
+/* END VEYLITH TERMINAL V38 */
+
+/* VEYLITH TERMINAL FIT V39 */
+
+/*
+Desktop target:
+- health space stays above Veylith
+- terminal begins at waist
+- terminal bottom remains visible
+- no page scrolling required
+- center remains Flex based
+*/
+
+@media (min-width: 1181px) {
+  .v35-responsive .v35-center {
+    padding-top: 72px !important;
+    min-height: 0 !important;
+    height: calc(100vh - 48px) !important;
+    max-height: calc(100vh - 48px) !important;
+    overflow: visible !important;
+    box-sizing: border-box !important;
+  }
+
+  /*
+ Scene remains large, but the terminal is pulled much farther
+ into it. This is what moves the terminal to the red marking.
+ */
+  .v35-responsive .v35-center .v35-scene-wrap {
+    height: 560px !important;
+    min-height: 560px !important;
+    flex: 0 0 560px !important;
+    overflow: visible !important;
+  }
+
+  .v35-responsive .v35-center .veylith-center {
+    width: 114% !important;
+    height: 560px !important;
+    min-height: 560px !important;
+    flex: 0 0 114% !important;
+  }
+
+  /*
+ Terminal starts substantially higher.
+ -330px places its top around Veylith's waist.
+ */
+  .v35-responsive .v35-center .activity-terminal {
+    position: relative !important;
+    inset: auto !important;
+
+    width: 96% !important;
+
+    margin: -330px auto 0 !important;
+
+    /*
+  Fill remaining visible viewport.
+  Clamp prevents an excessively short/tall terminal.
+  */
+    height: clamp(330px, calc(100vh - 475px), 455px) !important;
+
+    min-height: 330px !important;
+    max-height: 455px !important;
+
+    flex: 0 0 auto !important;
+    align-self: center !important;
+
+    z-index: 30 !important;
+
+    background: linear-gradient(180deg, rgba(9, 2, 2, 0.54) 0%, rgba(6, 1, 1, 0.6) 45%, rgba(4, 1, 1, 0.66) 100%) !important;
+
+    border: 1px solid rgba(180, 45, 36, 0.8) !important;
+
+    backdrop-filter: blur(1px) !important;
+    -webkit-backdrop-filter: blur(1px) !important;
+
+    overflow: hidden !important;
+  }
+
+  /*
+ Feed consumes terminal space instead of having an independent
+ fixed height. This prevents the bottom from being clipped.
+ */
+  .v35-responsive .v35-center .activity-terminal .feed {
+    height: calc(100% - 43px) !important;
+    min-height: 0 !important;
+    max-height: none !important;
+
+    overflow-y: auto !important;
+
+    background: rgba(2, 0, 0, 0.34) !important;
+
+    border-color: rgba(110, 30, 25, 0.48) !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal .event-row {
+    background: transparent !important;
+  }
+}
+
+/* Slightly shorter desktop */
+@media (min-width: 1181px) and (max-height: 850px) {
+  .v35-responsive .v35-center {
+    padding-top: 48px !important;
+  }
+
+  .v35-responsive .v35-center .v35-scene-wrap {
+    height: 520px !important;
+    min-height: 520px !important;
+    flex-basis: 520px !important;
+  }
+
+  .v35-responsive .v35-center .veylith-center {
+    height: 520px !important;
+    min-height: 520px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal {
+    margin-top: -265px !important;
+
+    height: calc(100vh - 410px) !important;
+    min-height: 315px !important;
+    max-height: 420px !important;
+  }
+}
+
+/* Very tall desktop */
+@media (min-width: 1181px) and (min-height: 1050px) {
+  .v35-responsive .v35-center {
+    padding-top: 82px !important;
+  }
+
+  .v35-responsive .v35-center .v35-scene-wrap {
+    height: 590px !important;
+    min-height: 590px !important;
+    flex-basis: 590px !important;
+  }
+
+  .v35-responsive .v35-center .veylith-center {
+    height: 590px !important;
+    min-height: 590px !important;
+  }
+
+  .v35-responsive .v35-center .activity-terminal {
+    margin-top: -345px !important;
+    height: 455px !important;
+  }
+}
+
+/* END VEYLITH TERMINAL FIT V39 */
+
+/* VEYLITH SYSTEM LIVE V40 */
+
+.v35-left-header {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
+  gap: 18px !important;
+  width: 100% !important;
+}
+
+.v35-left-header .identity {
+  flex: 0 0 auto !important;
+}
+
+/* SYSTEM LIVE now belongs to the Veylith branding */
+.v35-left-header .v35-system-live {
+  position: static !important;
+  inset: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  transform: none !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+
+  flex: 0 0 auto !important;
+
+  width: auto !important;
+  height: auto !important;
+
+  margin: 8px 0 0 0 !important;
+  padding: 0 !important;
+
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+
+  white-space: nowrap !important;
+
+  font-size: 9px !important;
+  font-weight: 800 !important;
+  letter-spacing: 1.2px !important;
+
+  color: #b8aaa5 !important;
+
+  z-index: auto !important;
+}
+
+/* Green live indicator */
+.v35-left-header .v35-system-live:before {
+  content: "";
+  display: block;
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: #46e18b;
+  box-shadow:
+    0 0 5px rgba(70, 225, 139, 0.85),
+    0 0 10px rgba(70, 225, 139, 0.35);
+}
+
+/*
+If the original element already contains its own green dot,
+avoid showing two.
+*/
+.v35-left-header .v35-system-live .dot,
+.v35-left-header .v35-system-live .status-dot,
+.v35-left-header .v35-system-live i {
+  display: none !important;
+}
+
+@media (max-width: 520px) {
+  .v35-left-header {
+    gap: 10px !important;
+  }
+
+  .v35-left-header .v35-system-live {
+    margin-top: 7px !important;
+    font-size: 8px !important;
+    letter-spacing: 0.8px !important;
+  }
+}
+
+/* END VEYLITH SYSTEM LIVE V40 */
+
+/* VEYLITH SYSTEM LIVE ALIGN V41 */
+
+.v35-left-header {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
+  gap: 8px !important;
+  width: 100% !important;
+}
+
+/* Critical fix: identity must only occupy its actual content width */
+.v35-left-header .identity {
+  position: static !important;
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 0 0 auto !important;
+
+  width: max-content !important;
+  max-width: max-content !important;
+  min-width: 0 !important;
+
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Put SYSTEM LIVE immediately after the VEYLITH wordmark */
+.v35-left-header .v35-system-live {
+  position: static !important;
+  inset: auto !important;
+  transform: none !important;
+
+  flex: 0 0 auto !important;
+
+  width: max-content !important;
+  max-width: max-content !important;
+
+  margin: 7px 0 0 0 !important;
+  padding: 0 !important;
+
+  align-self: flex-start !important;
+
+  white-space: nowrap !important;
+}
+
+@media (max-width: 520px) {
+  .v35-left-header {
+    gap: 6px !important;
+  }
+
+  .v35-left-header .v35-system-live {
+    margin-top: 6px !important;
+  }
+}
+
+/* END VEYLITH SYSTEM LIVE ALIGN V41 */
+
+/* VEYLITH SYSTEM LIVE V42 */
+
+.v35-left-header {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  gap: 0 !important;
+}
+
+.v35-left-header .identity {
+  width: auto !important;
+  max-width: none !important;
+}
+
+/* VEYLITH + SYSTEM LIVE are now literally one row */
+.v42-brand-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 7px !important;
+  width: max-content !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.v42-brand-row > h1,
+.v42-brand-row > .brand,
+.v42-brand-row > .logo {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: auto !important;
+  flex: 0 0 auto !important;
+}
+
+.v42-brand-row .v35-system-live {
+  position: static !important;
+  inset: auto !important;
+  transform: none !important;
+
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+
+  width: auto !important;
+  max-width: none !important;
+  flex: 0 0 auto !important;
+
+  margin: 0 0 0 2px !important;
+  padding: 0 !important;
+
+  align-self: center !important;
+
+  font-size: 9px !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+}
+
+/* subtitle remains directly underneath */
+.v35-left-header .identity > p,
+.v35-left-header .identity > .subtitle,
+.v35-left-header .identity > .tagline {
+  margin-top: 3px !important;
+}
+
+/* END VEYLITH SYSTEM LIVE V42 */
+
+.veylith-health-monitor{
+ position:relative;
+ width:100%;
+ height:190px;
+ min-height:190px;
+ box-sizing:border-box;
+ margin:0 0 6px;
+ padding:10px 14px 7px;
+ border-top:1px solid rgba(143,36,29,.5);
+ border-bottom:1px solid rgba(143,36,29,.35);
+ background:
+  linear-gradient(180deg,rgba(18,3,3,.72),rgba(4,1,1,.12)),
+  radial-gradient(ellipse at 50% 100%,rgba(140,25,18,.10),transparent 70%);
+ overflow:hidden;
+}
+.vhm-head{
+ position:relative;
+ z-index:2;
+ display:flex;
+ align-items:flex-start;
+ justify-content:space-between;
+ height:34px;
+}
+.vhm-head>div:first-child{
+ display:flex;
+ flex-direction:column;
+ gap:3px;
+}
+.vhm-head strong{
+ color:#e0ad52;
+ font-size:11px;
+ letter-spacing:.16em;
+}
+.vhm-head span{
+ color:#76645b;
+ font-size:8px;
+ letter-spacing:.09em;
+}
+.vhm-score{
+ display:flex;
+ align-items:baseline;
+ gap:8px;
+}
+.vhm-score b{
+ color:#e0ad52;
+ font-size:15px;
+ letter-spacing:.04em;
+}
+.vhm-score span{
+ color:#e0ad52;
+ font-size:8px;
+ font-weight:700;
+ letter-spacing:.12em;
+}
+.vhm-chart{
+ position:absolute;
+ left:14px;
+ right:14px;
+ top:38px;
+ height:118px;
+}
+.vhm-chart svg{
+ display:block;
+ width:100%;
+ height:100%;
+ overflow:visible;
+}
+.vhm-grid line{
+ stroke:#5b1a16;
+ stroke-width:.6;
+ opacity:.35;
+}
+.vhm-line{
+ fill:none;
+ stroke:#d92218;
+ stroke-width:2.2;
+ vector-effect:non-scaling-stroke;
+ filter:url(#vhmGlow);
+}
+.vhm-area{
+ fill:url(#vhmArea);
+ stroke:none;
+}
+.vhm-scale{
+ position:absolute;
+ inset:0;
+ display:flex;
+ flex-direction:column;
+ justify-content:space-between;
+ pointer-events:none;
+}
+.vhm-scale span{
+ color:#4f3934;
+ font-size:7px;
+ transform:translateY(-4px);
+}
+.vhm-foot{
+ position:absolute;
+ left:14px;
+ right:14px;
+ bottom:5px;
+ display:flex;
+ justify-content:space-between;
+ gap:10px;
+ color:#705a53;
+ font-size:7px;
+ letter-spacing:.06em;
+}
+.veylith-health-monitor[data-state="degraded"] .vhm-score b,
+.veylith-health-monitor[data-state="degraded"] .vhm-score span{color:#e0ad52}
+.veylith-health-monitor[data-state="warning"] .vhm-score b,
+.veylith-health-monitor[data-state="warning"] .vhm-score span{color:#ff6c26}
+.veylith-health-monitor[data-state="critical"] .vhm-score b,
+.veylith-health-monitor[data-state="critical"] .vhm-score span{color:#ff281c}
+
+/* VEYLITH HEALTH READABILITY FIX */
+.veylith-health-monitor{
+ position:relative!important;
+ display:block!important;
+ width:100%!important;
+ height:178px!important;
+ min-height:178px!important;
+ max-height:178px!important;
+ margin:0!important;
+ padding:12px 16px 8px!important;
+ box-sizing:border-box!important;
+ overflow:hidden!important;
+ isolation:isolate!important;
+ z-index:30!important;
+ background:
+  linear-gradient(180deg,rgba(15,3,3,.98),rgba(8,2,2,.96))!important;
+ border-top:1px solid rgba(217,34,24,.45)!important;
+ border-bottom:1px solid rgba(217,34,24,.60)!important;
+}
+
+.veylith-health-monitor + #veylithScene{
+ position:relative!important;
+ z-index:1!important;
+}
+
+.veylith-health-monitor .vhm-head{
+ position:absolute!important;
+ top:10px!important;
+ left:16px!important;
+ right:16px!important;
+ height:30px!important;
+ display:flex!important;
+ justify-content:space-between!important;
+ align-items:flex-start!important;
+ z-index:5!important;
+ pointer-events:none!important;
+}
+
+.veylith-health-monitor .vhm-head>div:first-child{
+ display:flex!important;
+ flex-direction:column!important;
+ gap:4px!important;
+ min-width:0!important;
+}
+
+.veylith-health-monitor .vhm-head strong{
+ display:block!important;
+ color:#e0ad52!important;
+ font-size:12px!important;
+ line-height:14px!important;
+ font-weight:800!important;
+ letter-spacing:.14em!important;
+ white-space:nowrap!important;
+ opacity:1!important;
+ text-shadow:0 0 10px rgba(224,173,82,.28)!important;
+}
+
+.veylith-health-monitor .vhm-head>div:first-child>span{
+ display:block!important;
+ color:#d5bbb2!important;
+ font-size:9px!important;
+ line-height:11px!important;
+ font-weight:600!important;
+ letter-spacing:.05em!important;
+ white-space:nowrap!important;
+ overflow:hidden!important;
+ text-overflow:ellipsis!important;
+ max-width:600px!important;
+ opacity:1!important;
+}
+
+.veylith-health-monitor .vhm-score{
+ display:flex!important;
+ flex-direction:row!important;
+ align-items:baseline!important;
+ justify-content:flex-end!important;
+ gap:9px!important;
+ min-width:130px!important;
+ white-space:nowrap!important;
+}
+
+.veylith-health-monitor .vhm-score b{
+ color:#e0ad52!important;
+ font-size:17px!important;
+ line-height:18px!important;
+ font-weight:900!important;
+ opacity:1!important;
+}
+
+.veylith-health-monitor .vhm-score span{
+ color:#e0ad52!important;
+ font-size:9px!important;
+ line-height:11px!important;
+ font-weight:800!important;
+ letter-spacing:.09em!important;
+ opacity:1!important;
+}
+
+.veylith-health-monitor .vhm-chart{
+ position:absolute!important;
+ top:47px!important;
+ left:38px!important;
+ right:16px!important;
+ height:91px!important;
+ z-index:2!important;
+ overflow:visible!important;
+}
+
+.veylith-health-monitor .vhm-chart svg{
+ display:block!important;
+ width:100%!important;
+ height:91px!important;
+ overflow:hidden!important;
+}
+
+.veylith-health-monitor .vhm-grid line{
+ stroke:#78312b!important;
+ stroke-width:.8!important;
+ opacity:.42!important;
+}
+
+.veylith-health-monitor .vhm-line{
+ fill:none!important;
+ stroke:#ff3328!important;
+ stroke-width:2.2!important;
+ vector-effect:non-scaling-stroke!important;
+ opacity:1!important;
+ filter:url(#vhmGlow)!important;
+}
+
+.veylith-health-monitor .vhm-area{
+ fill:url(#vhmArea)!important;
+ opacity:1!important;
+}
+
+.veylith-health-monitor .vhm-scale{
+ position:absolute!important;
+ top:0!important;
+ bottom:0!important;
+ left:-27px!important;
+ width:24px!important;
+ display:flex!important;
+ flex-direction:column!important;
+ justify-content:space-between!important;
+ align-items:flex-end!important;
+ pointer-events:none!important;
+}
+
+.veylith-health-monitor .vhm-scale span{
+ display:block!important;
+ color:#a98b82!important;
+ font-size:8px!important;
+ line-height:8px!important;
+ font-weight:600!important;
+ opacity:1!important;
+ transform:none!important;
+}
+
+.veylith-health-monitor .vhm-foot{
+ position:absolute!important;
+ left:16px!important;
+ right:16px!important;
+ bottom:8px!important;
+ height:16px!important;
+ display:grid!important;
+ grid-template-columns:1fr 1fr 1fr 1fr!important;
+ align-items:center!important;
+ gap:12px!important;
+ color:#b79b91!important;
+ font-size:8px!important;
+ line-height:10px!important;
+ font-weight:600!important;
+ letter-spacing:.05em!important;
+ opacity:1!important;
+ z-index:5!important;
+}
+
+.veylith-health-monitor .vhm-foot span{
+ display:block!important;
+ min-width:0!important;
+ white-space:nowrap!important;
+ overflow:hidden!important;
+ text-overflow:ellipsis!important;
+}
+
+.veylith-health-monitor .vhm-foot span:nth-child(2),
+.veylith-health-monitor .vhm-foot span:nth-child(3){
+ text-align:center!important;
+}
+
+.veylith-health-monitor .vhm-foot span:last-child{
+ text-align:right!important;
+}
+
+.veylith-health-monitor[data-state="stable"] .vhm-score b,
+.veylith-health-monitor[data-state="stable"] .vhm-score span{
+ color:#63df91!important;
+}
+
+.veylith-health-monitor[data-state="degraded"] .vhm-score b,
+.veylith-health-monitor[data-state="degraded"] .vhm-score span{
+ color:#e0ad52!important;
+}
+
+.veylith-health-monitor[data-state="warning"] .vhm-score b,
+.veylith-health-monitor[data-state="warning"] .vhm-score span{
+ color:#ff8a38!important;
+}
+
+.veylith-health-monitor[data-state="critical"] .vhm-score b,
+.veylith-health-monitor[data-state="critical"] .vhm-score span{
+ color:#ff3026!important;
+}
+
+@media(max-width:1200px){
+ .veylith-health-monitor .vhm-head>div:first-child>span{
+  max-width:360px!important;
+ }
+ .veylith-health-monitor .vhm-foot{
+  grid-template-columns:1fr 1fr!important;
+  row-gap:3px!important;
+  height:25px!important;
+  bottom:4px!important;
+ }
+}
+
+
+/* VEYLITH HEALTH MINIMAL OVERLAY */
+.veylith-health-monitor{
+ position:absolute!important;
+ top:0!important;
+ left:0!important;
+ right:0!important;
+ width:100%!important;
+ height:145px!important;
+ min-height:0!important;
+ max-height:none!important;
+ margin:0!important;
+ padding:0!important;
+ border:0!important;
+ background:transparent!important;
+ overflow:hidden!important;
+ pointer-events:none!important;
+ z-index:8!important;
+ isolation:auto!important;
+}
+
+.veylith-health-monitor + #veylithScene{
+ position:relative!important;
+ z-index:1!important;
+}
+
+.veylith-health-monitor .vhm-head,
+.veylith-health-monitor .vhm-scale,
+.veylith-health-monitor .vhm-foot{
+ display:none!important;
+}
+
+.veylith-health-monitor .vhm-chart{
+ position:absolute!important;
+ top:0!important;
+ left:0!important;
+ right:0!important;
+ width:100%!important;
+ height:145px!important;
+ z-index:1!important;
+ overflow:hidden!important;
+}
+
+.veylith-health-monitor .vhm-chart svg{
+ display:block!important;
+ width:100%!important;
+ height:145px!important;
+ overflow:hidden!important;
+}
+
+.veylith-health-monitor .vhm-grid{
+ display:none!important;
+}
+
+.veylith-health-monitor .vhm-line{
+ fill:none!important;
+ stroke:#e3261c!important;
+ stroke-width:1.7!important;
+ vector-effect:non-scaling-stroke!important;
+ opacity:.88!important;
+ filter:url(#vhmGlow)!important;
+}
+
+.veylith-health-monitor .vhm-area{
+ fill:url(#vhmArea)!important;
+ opacity:.16!important;
+}
+
+
+/* VEYLITH LIVE HEALTH WAVE V2 */
+.veylith-health-monitor{
+ position:absolute!important;
+ top:2px!important;
+ left:0!important;
+ right:0!important;
+ width:100%!important;
+ height:72px!important;
+ min-height:72px!important;
+ max-height:72px!important;
+ margin:0!important;
+ padding:0!important;
+ border:0!important;
+ background:transparent!important;
+ overflow:hidden!important;
+ pointer-events:none!important;
+ z-index:8!important;
+}
+
+.veylith-health-monitor .vhm-head,
+.veylith-health-monitor .vhm-foot,
+.veylith-health-monitor .vhm-scale,
+.veylith-health-monitor .vhm-grid{
+ display:none!important;
+}
+
+.veylith-health-monitor .vhm-chart{
+ position:absolute!important;
+ inset:0!important;
+ width:100%!important;
+ height:72px!important;
+ overflow:hidden!important;
+}
+
+.veylith-health-monitor .vhm-chart svg{
+ display:block!important;
+ width:100%!important;
+ height:72px!important;
+ overflow:hidden!important;
+}
+
+.veylith-health-monitor .vhm-line{
+ fill:none!important;
+ stroke:#e72a20!important;
+ stroke-width:1.55!important;
+ vector-effect:non-scaling-stroke!important;
+ stroke-linecap:round!important;
+ stroke-linejoin:round!important;
+ opacity:.92!important;
+ filter:url(#vhmGlow)!important;
+}
+
+.veylith-health-monitor .vhm-area{
+ display:none!important;
+}
+
+
+/* VEYLITH HEALTH TREND GRAPH V3 */
+.veylith-health-monitor{
+ position:absolute!important;
+ top:0!important;
+ left:1%!important;
+ right:1%!important;
+ width:98%!important;
+ height:105px!important;
+ min-height:105px!important;
+ max-height:105px!important;
+ overflow:hidden!important;
+ pointer-events:none!important;
+ background:transparent!important;
+ border:0!important;
+ z-index:3!important;
+}
+
+.veylith-health-monitor .vhm-head,
+.veylith-health-monitor .vhm-foot,
+.veylith-health-monitor .vhm-scale{
+ display:none!important;
+}
+
+.veylith-health-monitor .vhm-chart{
+ position:absolute!important;
+ top:0!important;
+ left:0!important;
+ right:0!important;
+ height:105px!important;
+ overflow:hidden!important;
+}
+
+.veylith-health-monitor .vhm-chart:before{
+ content:""!important;
+ position:absolute!important;
+ inset:0!important;
+ background-image:
+  linear-gradient(rgba(128,22,18,.13) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(128,22,18,.13) 1px,transparent 1px)!important;
+ background-size:100% 21px,50px 100%!important;
+ mask-image:linear-gradient(
+  90deg,
+  transparent,
+  black 8%,
+  black 92%,
+  transparent
+ )!important;
+ opacity:.8!important;
+}
+
+.veylith-health-monitor .vhm-chart svg{
+ position:relative!important;
+ z-index:2!important;
+ display:block!important;
+ width:100%!important;
+ height:105px!important;
+ overflow:hidden!important;
+}
+
+.veylith-health-monitor .vhm-grid{
+ display:none!important;
+}
+
+.veylith-health-monitor .vhm-line{
+ display:block!important;
+ fill:none!important;
+ stroke:#f12d24!important;
+ stroke-width:2!important;
+ vector-effect:non-scaling-stroke!important;
+ stroke-linejoin:round!important;
+ stroke-linecap:round!important;
+ opacity:.96!important;
+ filter:
+  drop-shadow(0 0 2px rgba(255,31,22,.95))
+  drop-shadow(0 0 7px rgba(208,20,13,.55))!important;
+}
+
+.veylith-health-monitor .vhm-area{
+ display:block!important;
+ fill:url(#vhmArea)!important;
+ opacity:.62!important;
+}
+
+
+/* VEYLITH HEALTH TREND GRAPH V4 */
+.veylith-health-monitor{
+ top:-8px!important;
+ left:2%!important;
+ right:2%!important;
+ width:96%!important;
+ height:115px!important;
+ min-height:115px!important;
+ max-height:115px!important;
+ z-index:3!important;
+ overflow:hidden!important;
+}
+
+.veylith-health-monitor .vhm-chart{
+ top:0!important;
+ left:0!important;
+ right:0!important;
+ height:115px!important;
+}
+
+.veylith-health-monitor .vhm-chart svg{
+ width:100%!important;
+ height:115px!important;
+}
+
+.veylith-health-monitor .vhm-chart:before{
+ background-image:
+  linear-gradient(rgba(150,25,19,.11) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(150,25,19,.11) 1px,transparent 1px)!important;
+ background-size:100% 23px,55px 100%!important;
+ opacity:.65!important;
+}
+
+.veylith-health-monitor .vhm-line{
+ stroke:#f2382d!important;
+ stroke-width:1.8!important;
+ opacity:.96!important;
+ filter:
+  drop-shadow(0 0 2px rgba(255,42,30,.9))
+  drop-shadow(0 0 6px rgba(215,24,16,.48))!important;
+}
+
+.veylith-health-monitor .vhm-area{
+ display:block!important;
+ fill:url(#vhmArea)!important;
+ opacity:.42!important;
+}
+
+
+/* VEYLITH REAL HEALTH TREND V5 */
+.veylith-health-monitor{
+ top:-14px!important;
+ left:1%!important;
+ right:1%!important;
+ width:98%!important;
+ height:122px!important;
+ min-height:122px!important;
+ max-height:122px!important;
+ overflow:hidden!important;
+ pointer-events:none!important;
+ z-index:3!important;
+}
+
+.veylith-health-monitor .vhm-chart{
+ top:0!important;
+ left:0!important;
+ right:0!important;
+ height:122px!important;
+ overflow:hidden!important;
+}
+
+.veylith-health-monitor .vhm-chart svg{
+ width:100%!important;
+ height:122px!important;
+ overflow:hidden!important;
+}
+
+.veylith-health-monitor .vhm-chart:before{
+ content:""!important;
+ position:absolute!important;
+ inset:0!important;
+ background-image:
+  linear-gradient(rgba(150,28,21,.10) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(150,28,21,.10) 1px,transparent 1px)!important;
+ background-size:100% 24px,52px 100%!important;
+ opacity:.72!important;
+ mask-image:linear-gradient(
+  90deg,
+  transparent 0%,
+  black 6%,
+  black 94%,
+  transparent 100%
+ )!important;
+}
+
+.veylith-health-monitor .vhm-line{
+ display:block!important;
+ fill:none!important;
+ stroke:#f2352a!important;
+ stroke-width:1.7!important;
+ stroke-linecap:round!important;
+ stroke-linejoin:round!important;
+ vector-effect:non-scaling-stroke!important;
+ opacity:.98!important;
+ filter:
+  drop-shadow(0 0 2px rgba(255,45,32,.95))
+  drop-shadow(0 0 7px rgba(205,20,13,.58))!important;
+}
+
+.veylith-health-monitor .vhm-area{
+ display:block!important;
+ fill:url(#vhmArea)!important;
+ opacity:.38!important;
+}
+
+
+/* VEYLITH HEALTH GRAPH TOP POSITION V6 */
+.veylith-health-monitor{
+ top:-38px!important;
+ height:122px!important;
+ min-height:122px!important;
+ max-height:122px!important;
+}
+
+.veylith-health-monitor .vhm-chart{
+ top:0!important;
+ height:122px!important;
+}
+
+.veylith-health-monitor .vhm-chart svg{
+ height:122px!important;
+}
+
+
+/* VEYLITH HEALTH GRAPH TOP POSITION V7 */
+.veylith-health-monitor{
+ top:-62px!important;
+}
+
+
+.veylith-health-monitor{
+ top:-50px!important;
+}
+
+
+.veylith-health-monitor{
+ top:-40px!important;
+}
+

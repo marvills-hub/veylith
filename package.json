@@ -10,10 +10,7 @@
                     "prod":  "node dist/server.js",
                     "test:security":  "npm run build \u0026\u0026 node scripts/security-regression.mjs",
                     "test:intelligence":  "npm run build \u0026\u0026 node scripts/v08-full-regression.mjs",
-                    "test:autonomous":  "npm run build \u0026\u0026 tsx scripts/v10-autonomous-e2e.ts",
-                    "ui:install":  "npm --prefix frontend install",
-                    "ui:dev":  "npm --prefix frontend start",
-                    "ui:build":  "npm --prefix frontend run build"
+                    "test:autonomous":  "npm run build \u0026\u0026 tsx scripts/v10-autonomous-e2e.ts"
                 },
     "dependencies":  {
                          "dotenv":  "^17.2.2",

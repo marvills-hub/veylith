@@ -1,8 +1,0 @@
-﻿<section class="panel">
- <header><h2>CURRENT PROJECT<br>ROADMAP</h2><span>{{project()}}</span></header>
- <div class="roadmap">
-  @for(stage of stages;track stage){
-   <div [class.active]="active(stage)"><i></i><small>{{stage}}</small></div>
-  }
- </div>
-</section>

@@ -1,4 +1,4 @@
-import express from "express";
+﻿import express from "express";
 import {requestLogging} from "../logging/request-logging.middleware.js";
 import {queryLogs,logStats} from "../logging/log-query.service.js";
 import {logFiles,logStorageStatus} from "../logging/log-storage.service.js";
@@ -242,6 +242,8 @@ export function createApp(){
  app.use((_req,res)=>res.sendFile(path.resolve("public/index.html")));
  return app;
 }
+
+
 
 
 

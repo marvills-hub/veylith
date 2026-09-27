@@ -1,7 +1,0 @@
-﻿:host{display:block;width:96%;margin:-330px auto 0;position:relative;z-index:10}
-.terminal{height:clamp(330px,calc(100vh - 475px),455px);min-height:330px;border:1px solid rgba(180,45,36,.82);background:linear-gradient(180deg,rgba(9,2,2,.52),rgba(4,1,1,.64));backdrop-filter:blur(1px);overflow:hidden}
-header{height:40px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid rgba(119,34,28,.55);background:rgba(7,1,1,.25)}
-h2{margin:0;font-size:11px;letter-spacing:1px;color:#ff5b52}header span{font-size:7px;font-weight:800;letter-spacing:1px;color:#d6cdca}
-.feed{height:calc(100% - 41px);overflow-y:auto;background:rgba(2,0,0,.25);padding:4px 10px}
-.row{min-height:27px;display:grid;grid-template-columns:72px 100px minmax(0,1fr);align-items:center;border-bottom:1px solid rgba(106,32,27,.32);font-size:8px}
-time{color:#8b7c78}b{color:#ff5149;font-size:7px;letter-spacing:.5px}p{margin:0;color:#eee5e2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
