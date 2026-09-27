@@ -1,150 +1,154 @@
-﻿import {db} from "../../../database/database.js";
-import {now} from "../../../config/config.js";
+﻿import { db } from "../../../database/database.js";
+import { now } from "../../../config/config.js";
 
-export type TerminalRoleRecoveryResult={
- recovered:boolean;
- reason:string;
- goalId?:string;
- projectId?:string;
- workItemId?:string;
- taskId?:string;
- jobId?:string;
- roleResultId?:string|null;
+export type TerminalRoleRecoveryResult = {
+  recovered: boolean;
+  reason: string;
+  goalId?: string;
+  projectId?: string;
+  workItemId?: string;
+  taskId?: string;
+  jobId?: string;
+  roleResultId?: string | null;
 };
 
-function row(sql:string,...args:any[]){
- return db.prepare(sql).get(...args) as any;
+const LEGACY_TERMINAL_ATTEMPTS = 3;
+
+function row(sql: string, ...args: any[]) {
+  return db.prepare(sql).get(...args) as any;
 }
 
-export function recoverExhaustedTerminalRole(taskId:string):TerminalRoleRecoveryResult{
- const task=row("SELECT * FROM tasks WHERE id=?",taskId);
- if(!task)return{recovered:false,reason:"task-not-found"};
+export function recoverExhaustedTerminalRole(taskId: string): TerminalRoleRecoveryResult {
+  const task = row("SELECT * FROM tasks WHERE id=?", taskId);
+  if (!task) return { recovered: false, reason: "task-not-found" };
 
- const dispatch=row(
-  "SELECT * FROM goal_work_dispatches WHERE task_id=? LIMIT 1",
-  taskId
- );
- if(!dispatch)return{recovered:false,reason:"not-goal-managed"};
+  const dispatch = row("SELECT * FROM goal_work_dispatches WHERE task_id=? LIMIT 1", taskId);
+  if (!dispatch) return { recovered: false, reason: "not-goal-managed" };
 
- const work=row(
-  "SELECT * FROM goal_work_items WHERE id=? LIMIT 1",
-  dispatch.work_item_id
- );
- if(!work)return{recovered:false,reason:"work-item-not-found"};
+  const work = row("SELECT * FROM goal_work_items WHERE id=? LIMIT 1", dispatch.work_item_id);
+  if (!work) return { recovered: false, reason: "work-item-not-found" };
 
- if(work.kind!=="review"&&work.kind!=="delivery"){
-  return{
-   recovered:false,
-   reason:"not-terminal-role",
-   goalId:String(dispatch.goal_id),
-   projectId:String(dispatch.project_id),
-   workItemId:String(dispatch.work_item_id),
-   taskId
-  };
- }
+  if (work.kind !== "review" && work.kind !== "delivery") {
+    return {
+      recovered: false,
+      reason: "not-terminal-role",
+      goalId: String(dispatch.goal_id),
+      projectId: String(dispatch.project_id),
+      workItemId: String(dispatch.work_item_id),
+      taskId,
+    };
+  }
 
- const lifecycle=row(
-  "SELECT * FROM autonomous_lifecycle_checkpoints WHERE goal_id=? LIMIT 1",
-  dispatch.goal_id
- );
- if(!lifecycle){
-  return{
-   recovered:false,
-   reason:"lifecycle-not-found",
-   goalId:String(dispatch.goal_id),
-   projectId:String(dispatch.project_id),
-   workItemId:String(dispatch.work_item_id),
-   taskId
-  };
- }
+  const lifecycle = row("SELECT * FROM autonomous_lifecycle_checkpoints WHERE goal_id=? LIMIT 1", dispatch.goal_id);
+  if (!lifecycle) {
+    return {
+      recovered: false,
+      reason: "lifecycle-not-found",
+      goalId: String(dispatch.goal_id),
+      projectId: String(dispatch.project_id),
+      workItemId: String(dispatch.work_item_id),
+      taskId,
+    };
+  }
 
- if(lifecycle.status==="completed"){
-  return{
-   recovered:false,
-   reason:"lifecycle-completed",
-   goalId:String(dispatch.goal_id),
-   projectId:String(dispatch.project_id),
-   workItemId:String(dispatch.work_item_id),
-   taskId
-  };
- }
+  if (lifecycle.status === "completed") {
+    return {
+      recovered: false,
+      reason: "lifecycle-completed",
+      goalId: String(dispatch.goal_id),
+      projectId: String(dispatch.project_id),
+      workItemId: String(dispatch.work_item_id),
+      taskId,
+    };
+  }
 
- const job=row(
-  "SELECT * FROM jobs WHERE task_id=? ORDER BY created_at DESC LIMIT 1",
-  taskId
- );
- if(!job){
-  return{
-   recovered:false,
-   reason:"job-not-found",
-   goalId:String(dispatch.goal_id),
-   projectId:String(dispatch.project_id),
-   workItemId:String(dispatch.work_item_id),
-   taskId
-  };
- }
+  const job = row("SELECT * FROM jobs WHERE task_id=? ORDER BY created_at DESC LIMIT 1", taskId);
+  if (!job) {
+    return {
+      recovered: false,
+      reason: "job-not-found",
+      goalId: String(dispatch.goal_id),
+      projectId: String(dispatch.project_id),
+      workItemId: String(dispatch.work_item_id),
+      taskId,
+    };
+  }
 
- if(
-  job.status!=="failed"||
-  Number(job.attempts)<Number(job.max_attempts)
- ){
-  return{
-   recovered:false,
-   reason:"job-not-exhausted",
-   goalId:String(dispatch.goal_id),
-   projectId:String(dispatch.project_id),
-   workItemId:String(dispatch.work_item_id),
-   taskId,
-   jobId:String(job.id)
-  };
- }
+  if (job.status !== "failed" || Number(job.attempts) < Number(job.max_attempts)) {
+    return {
+      recovered: false,
+      reason: "job-not-exhausted",
+      goalId: String(dispatch.goal_id),
+      projectId: String(dispatch.project_id),
+      workItemId: String(dispatch.work_item_id),
+      taskId,
+      jobId: String(job.id),
+    };
+  }
 
- if(task.status!=="failed"||work.status!=="failed"){
-  return{
-   recovered:false,
-   reason:"terminal-state-mismatch",
-   goalId:String(dispatch.goal_id),
-   projectId:String(dispatch.project_id),
-   workItemId:String(dispatch.work_item_id),
-   taskId,
-   jobId:String(job.id)
-  };
- }
+  const attempts = Number(job.attempts);
+  const maxAttempts = Number(job.max_attempts);
 
- const successfulRole=row(
-  `SELECT id
+  if (attempts !== LEGACY_TERMINAL_ATTEMPTS || maxAttempts !== LEGACY_TERMINAL_ATTEMPTS) {
+    return {
+      recovered: false,
+      reason: "terminal-recovery-budget-already-extended",
+      goalId: String(dispatch.goal_id),
+      projectId: String(dispatch.project_id),
+      workItemId: String(dispatch.work_item_id),
+      taskId,
+      jobId: String(job.id),
+    };
+  }
+
+  if (task.status !== "failed" || work.status !== "failed") {
+    return {
+      recovered: false,
+      reason: "terminal-state-mismatch",
+      goalId: String(dispatch.goal_id),
+      projectId: String(dispatch.project_id),
+      workItemId: String(dispatch.work_item_id),
+      taskId,
+      jobId: String(job.id),
+    };
+  }
+
+  const successfulRole = row(
+    `SELECT id
    FROM goal_role_results
    WHERE work_item_id=? AND status='completed'
    LIMIT 1`,
-  work.id
- );
- if(successfulRole){
-  return{
-   recovered:false,
-   reason:"successful-role-result-exists",
-   goalId:String(dispatch.goal_id),
-   projectId:String(dispatch.project_id),
-   workItemId:String(dispatch.work_item_id),
-   taskId,
-   jobId:String(job.id),
-   roleResultId:String(successfulRole.id)
-  };
- }
+    work.id,
+  );
+  if (successfulRole) {
+    return {
+      recovered: false,
+      reason: "successful-role-result-exists",
+      goalId: String(dispatch.goal_id),
+      projectId: String(dispatch.project_id),
+      workItemId: String(dispatch.work_item_id),
+      taskId,
+      jobId: String(job.id),
+      roleResultId: String(successfulRole.id),
+    };
+  }
 
- const roleResult=row(
-  `SELECT *
+  const roleResult = row(
+    `SELECT *
    FROM goal_role_results
    WHERE work_item_id=?
    ORDER BY updated_at DESC
    LIMIT 1`,
-  work.id
- );
+    work.id,
+  );
 
- const time=now();
+  const time = now();
 
- db.exec("BEGIN IMMEDIATE");
- try{
-  db.prepare(`
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const recoveredJob = db
+      .prepare(
+        `
    UPDATE jobs
    SET status='queued',
        max_attempts=max_attempts+1,
@@ -158,10 +162,18 @@ export function recoverExhaustedTerminalRole(taskId:string):TerminalRoleRecovery
        updated_at=?
    WHERE id=?
      AND status='failed'
-     AND attempts>=max_attempts
-  `).run(time,time,job.id);
+     AND attempts=?
+     AND max_attempts=?
+  `,
+      )
+      .run(time, time, job.id, LEGACY_TERMINAL_ATTEMPTS, LEGACY_TERMINAL_ATTEMPTS);
 
-  db.prepare(`
+    if (Number(recoveredJob.changes) !== 1) {
+      throw new Error("Terminal recovery eligibility changed before recovery could be committed.");
+    }
+
+    db.prepare(
+      `
    UPDATE tasks
    SET status='queued',
        phase='queued',
@@ -170,25 +182,31 @@ export function recoverExhaustedTerminalRole(taskId:string):TerminalRoleRecovery
        completed_at=NULL,
        updated_at=?
    WHERE id=?
-  `).run(time,taskId);
+  `,
+    ).run(time, taskId);
 
-  db.prepare(`
+    db.prepare(
+      `
    UPDATE goal_work_dispatches
    SET status='queued',
        updated_at=?
    WHERE work_item_id=?
-  `).run(time,work.id);
+  `,
+    ).run(time, work.id);
 
-  db.prepare(`
+    db.prepare(
+      `
    UPDATE goal_work_items
    SET status='running',
        completed_at=NULL,
        updated_at=?
    WHERE id=?
-  `).run(time,work.id);
+  `,
+    ).run(time, work.id);
 
-  if(roleResult){
-   db.prepare(`
+    if (roleResult) {
+      db.prepare(
+        `
     UPDATE goal_role_results
     SET status='running',
         summary=NULL,
@@ -197,10 +215,12 @@ export function recoverExhaustedTerminalRole(taskId:string):TerminalRoleRecovery
         completed_at=NULL,
         updated_at=?
     WHERE id=?
-   `).run(time,roleResult.id);
-  }
+   `,
+      ).run(time, roleResult.id);
+    }
 
-  db.prepare(`
+    db.prepare(
+      `
    UPDATE autonomous_lifecycle_checkpoints
    SET stage=?,
        status='running',
@@ -210,43 +230,44 @@ export function recoverExhaustedTerminalRole(taskId:string):TerminalRoleRecovery
        completed_at=NULL,
        updated_at=?
    WHERE goal_id=?
-  `).run(
-   work.kind==="delivery"?"delivery":"development",
-   taskId,
-   work.id,
-   time,
-   dispatch.goal_id
-  );
+  `,
+    ).run(work.kind === "delivery" ? "delivery" : "development", taskId, work.id, time, dispatch.goal_id);
 
-  db.prepare(`
+    db.prepare(
+      `
    UPDATE projects
    SET status='active',
        phase='autonomous_development',
        completed_at=NULL,
        updated_at=?
    WHERE id=?
-  `).run(time,dispatch.project_id);
+  `,
+    ).run(time, dispatch.project_id);
 
-  db.exec("COMMIT");
- }catch(error){
-  try{db.exec("ROLLBACK");}catch{}
-  throw error;
- }
+    db.exec("COMMIT");
+  } catch (error) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {}
+    throw error;
+  }
 
- return{
-  recovered:true,
-  reason:"recovered",
-  goalId:String(dispatch.goal_id),
-  projectId:String(dispatch.project_id),
-  workItemId:String(work.id),
-  taskId,
-  jobId:String(job.id),
-  roleResultId:roleResult?String(roleResult.id):null
- };
+  return {
+    recovered: true,
+    reason: "recovered",
+    goalId: String(dispatch.goal_id),
+    projectId: String(dispatch.project_id),
+    workItemId: String(work.id),
+    taskId,
+    jobId: String(job.id),
+    roleResultId: roleResult ? String(roleResult.id) : null,
+  };
 }
 
-export function recoverExhaustedTerminalRoles(){
- const candidates=db.prepare(`
+export function recoverExhaustedTerminalRoles() {
+  const candidates = db
+    .prepare(
+      `
   SELECT DISTINCT
    t.id AS task_id
   FROM tasks t
@@ -265,31 +286,32 @@ export function recoverExhaustedTerminalRoles(){
    AND w.status='failed'
    AND t.status='failed'
    AND j.status='failed'
-   AND j.attempts>=j.max_attempts
+   AND j.attempts=3
+   AND j.max_attempts=3
    AND l.status='failed'
    AND rr.id IS NULL
   ORDER BY t.updated_at ASC
- `).all() as Array<{task_id:string}>;
+ `,
+    )
+    .all() as Array<{ task_id: string }>;
 
- const results:TerminalRoleRecoveryResult[]=[];
+  const results: TerminalRoleRecoveryResult[] = [];
 
- for(const candidate of candidates){
-  try{
-   results.push(recoverExhaustedTerminalRole(candidate.task_id));
-  }catch(error){
-   results.push({
-    recovered:false,
-    reason:error instanceof Error
-     ?`recovery-error: ${error.message}`
-     :"recovery-error",
-    taskId:candidate.task_id
-   });
+  for (const candidate of candidates) {
+    try {
+      results.push(recoverExhaustedTerminalRole(candidate.task_id));
+    } catch (error) {
+      results.push({
+        recovered: false,
+        reason: error instanceof Error ? `recovery-error: ${error.message}` : "recovery-error",
+        taskId: candidate.task_id,
+      });
+    }
   }
- }
 
- return{
-  candidates:candidates.length,
-  recovered:results.filter(result=>result.recovered).length,
-  results
- };
+  return {
+    candidates: candidates.length,
+    recovered: results.filter((result) => result.recovered).length,
+    results,
+  };
 }

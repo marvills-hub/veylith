@@ -9,9 +9,7 @@ const repo=fs.readFileSync("src/orchestration/v1/lifecycle/lifecycle.repository.
 const service=fs.readFileSync("src/orchestration/v1/lifecycle/lifecycle.service.ts","utf8");
 const recovery=fs.readFileSync("src/orchestration/v1/lifecycle/lifecycle-recovery.service.ts","utf8");
 const executor=fs.readFileSync("src/team/goal-role-executor.service.ts","utf8");
-
 console.log("\nVEYLITH v1.0 BATCH 7.1C - PERSISTENT LIFECYCLE + RECOVERY\n");
-
 check("persistent lifecycle type exists",types.includes("AutonomousLifecycleCheckpoint"));
 check("lifecycle stages modeled",types.includes('"verification"')&&types.includes('"release"'));
 check("checkpoint table exists",repo.includes("autonomous_lifecycle_checkpoints"));
@@ -43,8 +41,7 @@ check("team executor stores publication id",executor.includes("publicationId:del
 check("team executor stores verification id",executor.includes("verificationId:deliveryResult.verification.id"));
 check("team executor stores release id",executor.includes("releaseId:deliveryResult.release.id"));
 check("team failure persists lifecycle failure",executor.includes("failAutonomousLifecycle(prepared.goalId,error)"));
+check("goal completion carries prepared assignment",executor.includes("completeGoalTaskExecution(task.id,prepared.assignment.id)"));
 check("legacy direct git remains absent",!executor.includes('../git/git.service.js'));
-
 console.log(`\n${passed}/${passed+failed} checks passed.`);
 if(failed)process.exitCode=1;
-

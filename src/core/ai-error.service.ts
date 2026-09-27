@@ -44,10 +44,11 @@ export function providerHTTPError(provider:string,status:number,body:string){
 }
 export function isRetryableAIError(error:unknown){
  if(error instanceof AIProviderError)return error.retryable;
- if(error instanceof TypeError)return true;
+ if(error instanceof TypeError&&/fetch failed|network|socket|ECONNRESET|ECONNREFUSED|ENETUNREACH|EAI_AGAIN/i.test(error.message))return true;
  const message=error instanceof Error?error.message:String(error);
  return /timeout|timed out|ECONNRESET|ECONNREFUSED|ENETUNREACH|EAI_AGAIN|fetch failed/i.test(message);
 }
 export function isPermanentAIError(error:unknown){
  return error instanceof AIProviderError&&!error.retryable;
 }
+

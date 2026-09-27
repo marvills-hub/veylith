@@ -2,7 +2,7 @@
 import {db} from "../src/database/database.js";
 import {createAutonomousProject} from "../src/core/task.service.js";
 
-const NAME="Veylith Task API v1 Final Trial";
+const NAME=`Veylith Task API v1 Final Trial ${new Date().toISOString().replace(/[:.]/g,"-")}`;
 
 const PROMPT=`
 Build a self-contained Node.js REST API for managing tasks.

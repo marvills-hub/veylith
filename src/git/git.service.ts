@@ -1,4 +1,4 @@
-import {simpleGit} from "simple-git";
+﻿import {simpleGit} from "simple-git";
 import {existsSync} from "node:fs";
 import {writeFile} from "node:fs/promises";
 import path from "node:path";
@@ -38,7 +38,9 @@ function githubResult(state:GitPublicationState){
   url:state.repositoryUrl,
   branch:state.branch||"main",
   commit:state.commit,
-  pushedAt:state.pushedAt
+  pushedAt:state.pushedAt,
+  verified:state.stage==="verified",
+  verifiedAt:state.verifiedAt
  };
 }
 
@@ -93,13 +95,10 @@ export async function publishToGitHub(task:any,project:any){
   event("github.skipped","GitHub publishing is not configured",{taskId:task.id,projectId:project.id,level:"warn"});
   return null;
  }
-
  const workspace=assertGitWorkspace(project.workspace);
  const local=await inspectGitRepository(workspace);
  if(!local.initialized||!local.head)throw new Error("GitHub publication requires an initialized repository with a local commit.");
-
  let state=ensureGitPublicationState(project.id);
-
  if(state.commit&&state.commit!==local.head){
   event("github.resume.invalidated","Local HEAD changed after publication checkpoint; publication will reconcile from commit stage",{
    taskId:task.id,
@@ -127,9 +126,7 @@ export async function publishToGitHub(task:any,project:any){
    committedAt:state.committedAt||now()
   });
  }
-
  setPhase(task.id,project.id,"publishing",94);
-
  if(state.stage==="verified"){
   const saved=githubResult(state);
   if(saved){
@@ -141,22 +138,18 @@ export async function publishToGitHub(task:any,project:any){
    return saved;
   }
  }
-
  let repository=repositoryFromState(state);
-
  if(!stageAtLeast(state.stage,"repository_ready")||!repository){
   event("github.repository.creating",`Preparing ${GITHUB_OWNER}/${project.slug}`,{
    taskId:task.id,
    projectId:project.id,
    data:{owner:GITHUB_OWNER,repository:project.slug,visibility:GITHUB_VISIBILITY}
   });
-
   repository=await createGitHubRepository(
    {token:GITHUB_TOKEN,owner:GITHUB_OWNER,visibility:GITHUB_VISIBILITY},
    project.slug,
    project.summary||`Autonomously created by Veylith: ${project.name}`
   );
-
   state=updateGitPublicationState(project.id,{
    stage:"repository_ready",
    commit:local.head,
@@ -167,7 +160,6 @@ export async function publishToGitHub(task:any,project:any){
    remoteUrl:repository.cloneUrl,
    repositoryReadyAt:state.repositoryReadyAt||now()
   });
-
   event("github.repository.ready",repository.fullName,{
    taskId:task.id,
    projectId:project.id,
@@ -183,34 +175,28 @@ export async function publishToGitHub(task:any,project:any){
     project.summary||`Autonomously created by Veylith: ${project.name}`
    );
   }
-
   state=updateGitPublicationState(project.id,{
    owner:repository.owner,
    repository:repository.name,
    repositoryUrl:repository.htmlUrl,
    remoteUrl:repository.cloneUrl
   });
-
   event("github.resume.repository","Recovered existing GitHub repository checkpoint",{
    taskId:task.id,
    projectId:project.id,
    data:{owner:repository.owner,repository:repository.name,commit:state.commit}
   });
  }
-
  if(!stageAtLeast(state.stage,"pushed")){
   event("github.push.started",`Pushing ${repository.fullName}`,{
    taskId:task.id,
    projectId:project.id,
    data:{branch:"main",commit:local.head}
   });
-
   const pushed=await publishGitHubRepository(workspace,repository,GITHUB_TOKEN);
-
   if(pushed.commit!==local.head){
    throw new Error(`Git push checkpoint mismatch: expected ${local.head}, received ${pushed.commit||"no commit"}.`);
   }
-
   state=updateGitPublicationState(project.id,{
    stage:"pushed",
    commit:pushed.commit,
@@ -221,7 +207,6 @@ export async function publishToGitHub(task:any,project:any){
    remoteUrl:pushed.remote,
    pushedAt:state.pushedAt||now()
   });
-
   event("github.push.checkpointed",`Push checkpoint recorded for ${repository.fullName}`,{
    taskId:task.id,
    projectId:project.id,
@@ -234,10 +219,8 @@ export async function publishToGitHub(task:any,project:any){
    data:{commit:state.commit,branch:state.branch}
   });
  }
-
  if(!stageAtLeast(state.stage,"verified")){
   const verified=await verifyGitHubRepository(GITHUB_TOKEN,repository.owner,repository.name);
-
   state=updateGitPublicationState(project.id,{
    stage:"verified",
    commit:state.commit||local.head,
@@ -248,19 +231,18 @@ export async function publishToGitHub(task:any,project:any){
    remoteUrl:repository.cloneUrl,
    verifiedAt:state.verifiedAt||now()
   });
-
   event("github.verification.checkpointed",`Verified ${verified.fullName}`,{
    taskId:task.id,
    projectId:project.id,
    data:{commit:state.commit,branch:state.branch}
   });
  }
-
  const result=githubResult(state);
  if(!result)throw new Error("GitHub publication reached verified state without complete repository metadata.");
-
+ if(!result.verified||!result.commit){
+  throw new Error("GitHub publication reached completion without verified commit evidence.");
+ }
  const completedAt=state.verifiedAt||now();
-
  db.prepare(`
   UPDATE projects
   SET github_owner=?,github_repo=?,github_url=?,github_branch=?,github_commit=?,github_pushed_at=?,updated_at=?
@@ -275,7 +257,6 @@ export async function publishToGitHub(task:any,project:any){
   completedAt,
   project.id
  );
-
  const latestMemory=db.prepare(`
   SELECT content
   FROM project_memory
@@ -283,7 +264,6 @@ export async function publishToGitHub(task:any,project:any){
   ORDER BY id DESC
   LIMIT 1
  `).get(project.id) as any;
-
  let duplicate=false;
  if(latestMemory?.content){
   try{
@@ -294,19 +274,15 @@ export async function publishToGitHub(task:any,project:any){
     saved?.commit===result.commit;
   }catch{}
  }
-
  if(!duplicate)memory(project.id,"github",JSON.stringify(result));
-
  event("github.push.completed",`Published ${result.owner}/${result.repository}`,{
   taskId:task.id,
   projectId:project.id,
   data:result
  });
-
  return result;
 }
 
 export function getPublicationRecoveryState(projectId:string){
  return getGitPublicationState(projectId);
 }
-

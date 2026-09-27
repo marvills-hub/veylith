@@ -7,9 +7,7 @@ function check(name,value){
 const authority=fs.readFileSync("src/orchestration/v1/delivery-goal-authority.service.ts","utf8");
 const delivery=fs.readFileSync("src/orchestration/v1/autonomous-delivery.service.ts","utf8");
 const executor=fs.readFileSync("src/team/goal-role-executor.service.ts","utf8");
-
 console.log("\nVEYLITH v1.0 BATCH 7.1B - DELIVERY SEQUENCING AUTHORITY\n");
-
 check("authority reads real goal execution",authority.includes("goalExecutionState(goalId)"));
 check("authority reads real goal graph",authority.includes("loadGoalTaskGraph(goalId)"));
 check("delivery work identified explicitly",authority.includes("deliveryWorkItemId"));
@@ -32,7 +30,7 @@ check("delivery still uses Batch 6 publication",delivery.includes("executeAutono
 check("delivery still verifies remote",delivery.includes("verifyAutonomousDelivery"));
 check("delivery still records release",delivery.includes("recordVerifiedProjectRelease"));
 check("legacy direct git remains absent",!executor.includes('../git/git.service.js'));
-check("goal completion still occurs after role execution",executor.indexOf("const result=await executeRole")<executor.indexOf("const advanced=completeGoalTaskExecution(task.id)"));
-
+check("goal completion carries active assignment ownership",executor.includes("completeGoalTaskExecution(task.id,prepared.assignment.id)"));
+check("goal completion occurs after role execution",executor.indexOf("const result=await executeRole")<executor.indexOf("completeGoalTaskExecution(task.id,prepared.assignment.id)"));
 console.log(`\n${passed}/${passed+failed} checks passed.`);
 if(failed)process.exitCode=1;

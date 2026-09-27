@@ -1,0 +1,11 @@
+﻿<div class="system" [class.open]="open()">
+ <button (click)="toggle()">SYSTEM <i></i></button>
+ @if(open()){
+  <div class="body">
+   <strong>SYSTEM MONITOR</strong>
+   <span>API {{data().ai?'CONNECTED':'WAITING'}}</span>
+   <span>GITHUB {{data().github?'CONNECTED':'WAITING'}}</span>
+   <span>WORKERS {{(data().workerSlots||data().workers||[]).length}}</span>
+  </div>
+ }
+</div>

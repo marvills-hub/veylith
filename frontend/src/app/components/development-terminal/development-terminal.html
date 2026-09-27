@@ -1,0 +1,12 @@
+﻿<section class="terminal">
+ <header><h2>DEVELOPMENT TERMINAL</h2><span>AUTONOMOUS TEAM</span></header>
+ <div #feed class="feed">
+  @for(event of rows();track $index){
+   <div class="row">
+    <time>{{time(event)}}</time>
+    <b>{{worker()}}</b>
+    <p>{{message(event)}}</p>
+   </div>
+  }
+ </div>
+</section>

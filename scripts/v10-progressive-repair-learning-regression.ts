@@ -1,35 +1,24 @@
-﻿import fs from "node:fs";
-
+import fs from"node:fs";
+let passed=0,failed=0;
+function check(name,value){
+ if(value){console.log(`PASS ${name}`);passed++;}
+ else{console.log(`FAIL ${name}`);failed++;}
+}
 const recovery=fs.readFileSync("src/team/team-recovery.service.ts","utf8");
 const diagnostic=fs.readFileSync("src/agent/diagnostic.service.ts","utf8");
-
-let pass=0;
-let fail=0;
-
-function check(name:string,value:boolean){
- if(value){
-  pass++;
-  console.log(`PASS ${name}`);
- }else{
-  fail++;
-  console.log(`FAIL ${name}`);
- }
-}
-
 const callStart=recovery.indexOf("const diagnostic=await diagnoseFailure(");
 const callEnd=recovery.indexOf(");",callStart);
 const call=recovery.slice(callStart,callEnd+2);
-
 const rejectStart=recovery.indexOf("const rejected:RepairHistoryItem={");
 const rejectEnd=recovery.indexOf("continue;",rejectStart);
 const reject=recovery.slice(rejectStart,rejectEnd+"continue;".length);
-
 check("diagnostic call exists",callStart>=0&&callEnd>callStart);
-check("diagnostic receives validation",call.includes("validation"));
+check("diagnostic receives current failure evidence",call.includes("failure"));
 check("diagnostic has no invented history argument",!call.includes("history"));
 check("diagnostic loads project repair history",diagnostic.includes("const history=repairHistory(project.id);"));
 check("diagnostic compares matching fingerprints",diagnostic.includes("history.filter(item=>item.fingerprint===fingerprint)"));
 check("diagnostic incorporates previous files",diagnostic.includes("history.flatMap(item=>item.files||[])"));
+check("review rejection participates in recovery",recovery.includes("reviewRejected"));
 check("rejected repair becomes validation evidence",reject.includes('command:"repair-cycle"'));
 check("rejected repair enters local history",reject.includes("history=[...history,rejected]"));
 check("rejected repair enters team_repair memory",reject.includes('"team_repair"'));
@@ -48,6 +37,5 @@ check("progress telemetry exists",recovery.includes('"team.repair_progressed"'))
 check("durable budget remains authority",recovery.includes("attempt<recovery.maxAttempts"));
 check("successful recovery remains terminal",recovery.includes('finish(recovery.id,"recovered"'));
 check("true exhaustion remains terminal",recovery.includes('finish(recovery.id,"exhausted"'));
-
-console.log(`\n7.4H.6 REGRESSION: ${pass}/${pass+fail}`);
-process.exitCode=fail?1:0;
+console.log(`\n7.4H.6 REGRESSION: ${passed}/${passed+failed}`);
+process.exitCode=failed?1:0;

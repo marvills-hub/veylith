@@ -1,8 +1,8 @@
-import "dotenv/config";
+﻿import "dotenv/config";
 import {createApp} from "./api/routes.js";
 import {db} from "./database/database.js";
 import {workerLoop} from "./core/worker.service.js";
-import {recoverInterruptedTasks,resumePausedAIJobs} from "./core/recovery.service.js";
+import {recoverInterruptedTasks,recoverLiveJobs,resumePausedAIJobs} from "./core/recovery.service.js";
 import {collectMetrics} from "./monitoring/metrics.service.js";
 import {event,setWorker} from "./core/telemetry.js";
 import {
@@ -144,6 +144,22 @@ async function runRecovery(){
  recoveryRunning=true;
 
  try{
+  const jobs=recoverLiveJobs();
+
+  if(jobs.runtime||jobs.legacy||jobs.expired||jobs.reconciled){
+   logger.warn(
+    "Live job recovery reconciled runtime state",
+    {component:"recovery",operation:"jobs"},
+    {
+     runtime:jobs.runtime,
+     legacy:jobs.legacy,
+     expired:jobs.expired,
+     reconciled:jobs.reconciled,
+     staleRuntimes:jobs.staleRuntimes
+    }
+   );
+  }
+
   await resumePausedAIJobs();
  }catch(error){
   logger.error(
@@ -343,6 +359,7 @@ process.on("uncaughtException",error=>{
 process.on("unhandledRejection",error=>{
  fatal("unhandledRejection",error);
 });
+
 
 
 

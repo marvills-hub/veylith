@@ -6,9 +6,7 @@ function check(name,value){
 }
 const executor=fs.readFileSync("src/team/goal-role-executor.service.ts","utf8");
 const delivery=fs.readFileSync("src/orchestration/v1/autonomous-delivery.service.ts","utf8");
-
 console.log("\nVEYLITH v1.0 BATCH 7.1A - PRODUCTION DELIVERY BRIDGE\n");
-
 check("legacy initializeGit import removed",!executor.includes('initializeGit,publishToGitHub'));
 check("legacy publishToGitHub import removed",!executor.includes('../git/git.service.js'));
 check("v1 delivery coordinator imported",executor.includes("executeV1AutonomousDelivery"));
@@ -33,12 +31,10 @@ check("team planner route preserved",executor.includes("executePlanner"));
 check("team developer route preserved",executor.includes("executeDeveloper"));
 check("team tester route preserved",executor.includes("executeTester"));
 check("team reviewer route preserved",executor.includes("executeReviewer"));
-check("goal advancement preserved",executor.includes("completeGoalTaskExecution(task.id)"));
+check("goal advancement preserves assignment ownership",executor.includes("completeGoalTaskExecution(task.id,prepared.assignment.id)"));
 check("development synchronization preserved",executor.includes("synchronizeTaskDevelopment(task.id)"));
 check("team recovery preserved",executor.includes("recoverGoalWork"));
 check("repository learning preserved",executor.includes("synchronizeRepositoryLearning"));
 check("agent project context preserved",executor.includes("buildAgentProjectContext"));
-
 console.log(`\n${passed}/${passed+failed} checks passed.`);
 if(failed)process.exitCode=1;
-

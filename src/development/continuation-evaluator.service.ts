@@ -23,6 +23,7 @@ export function evaluateDevelopmentContinuation(sessionId:string):ContinuationEv
   SELECT id,status,requirement_ids_json,acceptance_ids_json
   FROM goal_work_items
   WHERE goal_id=?
+  AND kind NOT IN ('review','delivery')
   ORDER BY created_at ASC,id ASC
  `).all(session.goalId) as any[];
 
@@ -149,3 +150,4 @@ export function evaluateAndMarkDevelopmentCycle(sessionId:string){
  }
  return evaluation;
 }
+

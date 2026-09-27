@@ -1,7 +1,7 @@
-import path from"node:path";
+﻿import path from"node:path";
 import{memory}from"../database/database.js";
 import{event}from"../core/telemetry.js";
-import{publishToGitHub}from"../git/git.service.js";
+import{getPublicationRecoveryState,publishToGitHub}from"../git/git.service.js";
 import{getDeliveryPlan}from"./delivery-plan.repository.js";
 import{
  assertPreparedDeliveryCommitCurrent
@@ -16,6 +16,31 @@ import type{
  AuthorizeDeliveryPublicationInput,
  ExecuteDeliveryPublicationInput
 }from"./delivery-publication.types.js";
+
+function verifiedGitHubEvidence(projectId:string,expectedCommit:string){
+ const state=getPublicationRecoveryState(projectId);
+ if(
+  !state||
+  state.stage!=="verified"||
+  !state.owner||
+  !state.repository||
+  !state.repositoryUrl||
+  !state.commit||
+  state.commit!==expectedCommit
+ ){
+  return null;
+ }
+ return{
+  owner:state.owner,
+  repository:state.repository,
+  url:state.repositoryUrl,
+  branch:state.branch||"main",
+  commit:state.commit,
+  pushedAt:state.pushedAt,
+  verified:true,
+  verifiedAt:state.verifiedAt
+ };
+}
 
 export async function authorizeAutonomousPublication(
  input:AuthorizeDeliveryPublicationInput
@@ -124,10 +149,44 @@ export async function executeAutonomousPublication(
    "Project repository slug does not match approved delivery repository."
   );
  }
- const publication=await authorizeAutonomousPublication({
+ let publication=await authorizeAutonomousPublication({
   deliveryPlanId:plan.id
  });
  if(publication.status==="published"){
+  const recovered=verifiedGitHubEvidence(
+   plan.projectId,
+   publication.commit
+  );
+  if(!recovered){
+   throw new Error(
+    "Published delivery cannot be resumed without matching verified GitHub evidence."
+   );
+  }
+  publication=updateDeliveryPublication(publication.id,{
+   status:"published",
+   github:recovered,
+   error:null,
+   metadata:{
+    recoveredVerifiedPublication:true,
+    recoveredVerifiedAt:recovered.verifiedAt
+   }
+  });
+  event(
+   "delivery.publication_recovered",
+   `Recovered verified GitHub publication for ${publication.commit}.`,
+   {
+    taskId:plan.taskId||undefined,
+    projectId:plan.projectId,
+    component:"delivery-publication",
+    data:{
+     publicationId:publication.id,
+     deliveryPlanId:plan.id,
+     commit:publication.commit,
+     owner:recovered.owner,
+     repository:recovered.repository
+    }
+   }
+  );
   return publication;
  }
  if(publication.status==="publishing"){
@@ -158,6 +217,16 @@ export async function executeAutonomousPublication(
    });
    throw new Error(failed.error!);
   }
+  if(!github.verified||!github.commit){
+   throw new Error(
+    "GitHub publishing returned without verified remote commit evidence."
+   );
+  }
+  if(github.commit!==publication.commit){
+   throw new Error(
+    `Verified GitHub commit mismatch: expected ${publication.commit}, received ${github.commit}.`
+   );
+  }
   const published=updateDeliveryPublication(publication.id,{
    status:"published",
    github:github as Record<string,unknown>,
@@ -166,7 +235,7 @@ export async function executeAutonomousPublication(
     publishedCommit:publication.commit
    }
   });
-memory(
+  memory(
    plan.projectId,
    "delivery_publication",
    JSON.stringify({
@@ -240,5 +309,4 @@ export async function assertPublicationAuthorizationCurrent(
 export function autonomousPublicationState(projectId:string){
  return latestDeliveryPublication(projectId);
 }
-
 

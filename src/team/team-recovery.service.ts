@@ -10,6 +10,7 @@ import {
  type RepairHistoryItem
 } from "../agent/diagnostic.service.js";
 import {repairProject} from "../agent/repair.service.js";
+import {reviewProject} from "../agent/reviewer.service.js";
 import {applyDevelopment,validateDevelopment} from "../orchestration/pipeline.service.js";
 import {
  synchronizeRepairEvolution,
@@ -18,7 +19,8 @@ import {
 import type {
  ArchitectureResult,
  DevelopmentPlan,
- DevelopmentResult
+ DevelopmentResult,
+ ReviewResult
 } from "../orchestration/pipeline.types.js";
 
 export type TeamRecoveryStatus="recovering"|"recovered"|"exhausted";
@@ -229,6 +231,24 @@ function normalizeFailure(error:unknown,validation?:any){
  };
 }
 
+function reviewFailure(review:ReviewResult){
+ return{
+  success:false,
+  failure:{
+   command:"final-review",
+   args:[],
+   stdout:"",
+   stderr:[
+    review.summary||"Final review rejected the implementation.",
+    ...(review.issues||[])
+   ].filter(Boolean).join(" | "),
+   code:1,
+   failureKind:"review"
+  },
+  results:[]
+ };
+}
+
 function repairHistoryForProject(projectId:string):RepairHistoryItem[]{
  try{return repairHistory(projectId);}catch{return[];}
 }
@@ -245,6 +265,7 @@ export async function recoverGoalWork(input:{
  development:DevelopmentResult;
  failure:any;
  error?:unknown;
+ review?:ReviewResult;
 }){
  let recovery=ensureRecovery({
   goalId:input.goalId,
@@ -253,35 +274,36 @@ export async function recoverGoalWork(input:{
   assignmentId:input.assignmentId,
   taskId:input.task.id
  });
-
  if(recovery.status==="recovered"){
   return{
    recovered:true,
    recovery,
    development:input.development,
-   validation:recovery.validation
+   validation:recovery.validation,
+   review:input.review||null
   };
  }
-
  if(recovery.status==="exhausted"){
   return{
    recovered:false,
    exhausted:true,
    recovery,
    development:input.development,
-   validation:recovery.validation
+   validation:recovery.validation,
+   review:input.review||null
   };
  }
-
  let development=input.development;
  let validation=normalizeFailure(input.error,input.failure);
+ let review=input.review;
+ let reviewRejected=Boolean(review&&!review.approved);
  let history=repairHistoryForProject(input.projectId);
  let attempt=Math.max(recovery.attempts,Number(input.task.repair_attempts||0));
-
- while(!validation.success&&attempt<recovery.maxAttempts){
+ const currentFailure=()=>reviewRejected&&review?reviewFailure(review):validation;
+ while((!validation.success||reviewRejected)&&attempt<recovery.maxAttempts){
   attempt++;
   taskRepairAttempts(input.task.id,attempt);
-
+  const failure=currentFailure();
   event(
    "team.recovery_started",
    `Team recovery ${attempt}/${recovery.maxAttempts}`,
@@ -295,29 +317,27 @@ export async function recoverGoalWork(input:{
      workItemId:input.workItemId,
      assignmentId:input.assignmentId,
      attempt,
-     fingerprint:failureFingerprint(validation)
+     fingerprint:failureFingerprint(failure),
+     source:reviewRejected?"review":"validation"
     }
    }
   );
-
   const diagnostic=await diagnoseFailure(
    input.task,
    input.project,
    input.architecture,
    input.plan,
-   validation
-   );
-
+   failure
+  );
   saveAttempt(
    recovery.id,
    attempt,
    diagnostic,
-   validation,
-   validation?.failure?.stderr||
-   validation?.failure?.stdout||
-   "Validation failed"
+   failure,
+   failure?.failure?.stderr||
+   failure?.failure?.stdout||
+   "Validation or review failed"
   );
-
   event(
    "team.diagnostic_completed",
    diagnostic.summary,
@@ -332,101 +352,104 @@ export async function recoverGoalWork(input:{
      attempt,
      fingerprint:diagnostic.fingerprint,
      confidence:diagnostic.confidence,
-     rootCause:diagnostic.rootCause
+     rootCause:diagnostic.rootCause,
+     source:reviewRejected?"review":"validation"
     }
    }
   );
-
-   const beforeRepairFingerprint=diagnostic.fingerprint;
-   let repair:DevelopmentResult;
-   try{
-    repair=await repairProject(
-     input.task,
-     input.project,
-     input.architecture,
-     input.plan,
-     validation,
-     undefined,
-     diagnostic,
-     history
-    );
-    await applyDevelopment(
-     repair,
-     input.task,
-     input.project,
-     input.plan
-    );
-   }catch(error){
-    const repairError=error instanceof Error?error.message:String(error);
-    const rejected:RepairHistoryItem={
+  const beforeRepairFingerprint=diagnostic.fingerprint;
+  let repair:DevelopmentResult;
+  try{
+   repair=await repairProject(
+    input.task,
+    input.project,
+    input.architecture,
+    input.plan,
+    failure,
+    review,
+    diagnostic,
+    history
+   );
+   await applyDevelopment(
+    repair,
+    input.task,
+    input.project,
+    input.plan
+   );
+  }catch(error){
+   const repairError=error instanceof Error?error.message:String(error);
+   const rejected:RepairHistoryItem={
+    attempt,
+    summary:`Repair proposal rejected before validation: ${repairError}`,
+    files:[],
+    fingerprint:diagnostic.fingerprint,
+    validation:{
+     success:false,
+     failure:{
+      command:"repair-cycle",
+      args:[],
+      stdout:"",
+      stderr:repairError,
+      code:1
+     },
+     results:[]
+    }
+   };
+   history=[...history,rejected];
+   memory(
+    input.projectId,
+    "team_repair",
+    JSON.stringify({
+     goalId:input.goalId,
+     workItemId:input.workItemId,
+     assignmentId:input.assignmentId,
      attempt,
-     summary:`Repair proposal rejected before validation: ${repairError}`,
-     files:[],
-     fingerprint:diagnostic.fingerprint,
-     validation:{
-      success:false,
-      failure:{
-       command:"repair-cycle",
-       args:[],
-       stdout:"",
-       stderr:repairError,
-       code:1
-      },
-      results:[]
-     }
-    };
-    history=[...history,rejected];
-     memory(
-     input.projectId,
-     "team_repair",
-     JSON.stringify({
+     source:reviewRejected?"review":"validation",
+     diagnostic:{
+      summary:diagnostic.summary,
+      rootCause:diagnostic.rootCause,
+      fingerprint:diagnostic.fingerprint,
+      confidence:diagnostic.confidence
+     },
+     repair:{
+      summary:rejected.summary,
+      files:[]
+     },
+     validation:rejected.validation,
+     review:review||null,
+     rejected:true,
+     error:repairError
+    })
+   );
+   saveAttempt(
+    recovery.id,
+    attempt,
+    diagnostic,
+    failure,
+    repairError
+   );
+   event(
+    "team.repair_rejected",
+    `Repair attempt ${attempt} rejected: ${repairError}`,
+    {
+     taskId:input.task.id,
+     projectId:input.projectId,
+     level:"warn",
+     component:"team-recovery",
+     data:{
       goalId:input.goalId,
       workItemId:input.workItemId,
       assignmentId:input.assignmentId,
       attempt,
-      diagnostic:{
-       summary:diagnostic.summary,
-       rootCause:diagnostic.rootCause,
-       fingerprint:diagnostic.fingerprint,
-       confidence:diagnostic.confidence
-      },
-      repair:{
-       summary:rejected.summary,
-       files:[]
-      },
-      validation:rejected.validation,
-      rejected:true,
-      error:repairError
-     })
-    );
-    saveAttempt(
-     recovery.id,
-     attempt,
-     diagnostic,
-     validation,
-     repairError
-    );
-    event(
-     "team.repair_rejected",
-     `Repair attempt ${attempt} rejected: ${repairError}`,
-     {
-      taskId:input.task.id,
-      projectId:input.projectId,
-      level:"warn",
-      component:"team-recovery",
-      data:{
-       goalId:input.goalId,
-       workItemId:input.workItemId,
-       assignmentId:input.assignmentId,
-       attempt,
-       maxAttempts:recovery.maxAttempts,
-       fingerprint:diagnostic.fingerprint,
-       error:repairError
-      }
+      maxAttempts:recovery.maxAttempts,
+      fingerprint:diagnostic.fingerprint,
+      error:repairError,
+      source:reviewRejected?"review":"validation"
      }
-    );
-    continue;
-   }
+    }
+   );
+   continue;
+  }
   const repairEvolution=synchronizeRepairEvolution({
    projectId:input.projectId,
    taskId:input.task.id,
@@ -437,118 +460,46 @@ export async function recoverGoalWork(input:{
     `goal:${input.goalId}`,
     `work:${input.workItemId}`,
     `repair-attempt:${attempt}`,
-    `failure:${diagnostic.fingerprint}`
+    `failure:${diagnostic.fingerprint}`,
+    `source:${reviewRejected?"review":"validation"}`
    ]
   });
-
   development=repair;
   validation=await validateDevelopment(
    development,
    input.task,
    input.project
   );
-
-  const afterRepairFingerprint=failureFingerprint(validation);
-   const item:RepairHistoryItem={
+  if(validation.success&&reviewRejected){
+   review=await reviewProject(
+    input.task,
+    input.project,
+    input.architecture,
+    input.plan,
+    development,
+    validation
+   );
+   reviewRejected=!review.approved;
+  }
+  const afterFailure=currentFailure();
+  const afterRepairFingerprint=failureFingerprint(afterFailure);
+  const item:RepairHistoryItem={
    attempt,
    summary:repair.summary,
    files:repair.files.map(file=>file.path),
    fingerprint:afterRepairFingerprint,
-   validation
+   validation:afterFailure
   };
-
   history=[...history,item];
-
-   if(!validation.success&&afterRepairFingerprint!==beforeRepairFingerprint){
-    rememberRecoveryOutcome({
-     projectId:input.projectId,
-     taskId:input.task.id,
-     fingerprint:beforeRepairFingerprint,
-     failureKind:String(
-      input.failure?.failure?.failureKind||
-      input.failure?.failure?.type||
-      "validation"
-     ),
-     summary:diagnostic.summary,
-     rootCause:diagnostic.rootCause,
-     relevantFiles:diagnostic.relevantFiles,
-     repairFiles:repair.files.map(file=>file.path),
-     strategy:diagnostic.strategy,
-     outcome:"resolved",
-     evidence:[
-      `repair-attempt:${attempt}`,
-      `snapshot:${repairEvolution.snapshot?.id||"unchanged"}`,
-      `next-failure:${afterRepairFingerprint}`
-     ]
-    });
-
-    rememberRecoveryOutcome({
-     projectId:input.projectId,
-     taskId:input.task.id,
-     fingerprint:afterRepairFingerprint,
-     failureKind:"validation",
-     summary:"Post-repair validation exposed a different failure.",
-     rootCause:
-      validation?.failure?.stderr||
-      validation?.failure?.stdout||
-      "A different validation failure appeared after repair.",
-     relevantFiles:repair.files.map(file=>file.path),
-     repairFiles:[],
-     strategy:[],
-     outcome:"unresolved",
-     evidence:[
-      `repair-attempt:${attempt}`,
-      `previous-failure:${beforeRepairFingerprint}`,
-      `snapshot:${repairEvolution.snapshot?.id||"unchanged"}`
-     ]
-    });
-
-    event(
-     "team.repair_progressed",
-     `Repair attempt ${attempt} resolved one failure and exposed another.`,
-     {
-      taskId:input.task.id,
-      projectId:input.projectId,
-      component:"team-recovery",
-      data:{
-       goalId:input.goalId,
-       workItemId:input.workItemId,
-       assignmentId:input.assignmentId,
-       attempt,
-       previousFingerprint:beforeRepairFingerprint,
-       nextFingerprint:afterRepairFingerprint
-      }
-     }
-    );
-   }
-  memory(
-   input.projectId,
-   "team_repair",
-   JSON.stringify({
-    goalId:input.goalId,
-    workItemId:input.workItemId,
-    assignmentId:input.assignmentId,
-    attempt,
-    diagnostic:{
-     summary:diagnostic.summary,
-     rootCause:diagnostic.rootCause,
-     fingerprint:diagnostic.fingerprint,
-     confidence:diagnostic.confidence
-    },
-    repair:{
-     summary:repair.summary,
-     files:repair.files.map(file=>file.path)
-    },
-    validation
-   })
-  );
-
-  if(validation.success){
+  if(
+   (!validation.success||reviewRejected)&&
+   afterRepairFingerprint!==beforeRepairFingerprint
+  ){
    rememberRecoveryOutcome({
     projectId:input.projectId,
     taskId:input.task.id,
-    fingerprint:diagnostic.fingerprint,
-    failureKind:String(
+    fingerprint:beforeRepairFingerprint,
+    failureKind:input.review?"review":String(
      input.failure?.failure?.failureKind||
      input.failure?.failure?.type||
      "validation"
@@ -562,10 +513,97 @@ export async function recoverGoalWork(input:{
     evidence:[
      `repair-attempt:${attempt}`,
      `snapshot:${repairEvolution.snapshot?.id||"unchanged"}`,
-     "post-repair validation passed"
+     `next-failure:${afterRepairFingerprint}`
     ]
    });
-
+   rememberRecoveryOutcome({
+    projectId:input.projectId,
+    taskId:input.task.id,
+    fingerprint:afterRepairFingerprint,
+    failureKind:reviewRejected?"review":"validation",
+    summary:reviewRejected
+     ?"Post-repair review exposed a remaining or different defect."
+     :"Post-repair validation exposed a different failure.",
+    rootCause:reviewRejected
+     ?review?.summary||"Final review still rejects the implementation."
+     :validation?.failure?.stderr||
+      validation?.failure?.stdout||
+      "A different validation failure appeared after repair.",
+    relevantFiles:repair.files.map(file=>file.path),
+    repairFiles:[],
+    strategy:reviewRejected?(review?.issues||[]):[],
+    outcome:"unresolved",
+    evidence:[
+     `repair-attempt:${attempt}`,
+     `previous-failure:${beforeRepairFingerprint}`,
+     `snapshot:${repairEvolution.snapshot?.id||"unchanged"}`
+    ]
+   });
+   event(
+    "team.repair_progressed",
+    `Repair attempt ${attempt} resolved one failure and exposed another.`,
+    {
+     taskId:input.task.id,
+     projectId:input.projectId,
+     component:"team-recovery",
+     data:{
+      goalId:input.goalId,
+      workItemId:input.workItemId,
+      assignmentId:input.assignmentId,
+      attempt,
+      previousFingerprint:beforeRepairFingerprint,
+      nextFingerprint:afterRepairFingerprint,
+      source:reviewRejected?"review":"validation"
+     }
+    }
+   );
+  }
+  memory(
+   input.projectId,
+   "team_repair",
+   JSON.stringify({
+    goalId:input.goalId,
+    workItemId:input.workItemId,
+    assignmentId:input.assignmentId,
+    attempt,
+    source:input.review?"review":"validation",
+    diagnostic:{
+     summary:diagnostic.summary,
+     rootCause:diagnostic.rootCause,
+     fingerprint:diagnostic.fingerprint,
+     confidence:diagnostic.confidence
+    },
+    repair:{
+     summary:repair.summary,
+     files:repair.files.map(file=>file.path)
+    },
+    validation,
+    review:review||null
+   })
+  );
+  if(validation.success&&!reviewRejected){
+   rememberRecoveryOutcome({
+    projectId:input.projectId,
+    taskId:input.task.id,
+    fingerprint:diagnostic.fingerprint,
+    failureKind:input.review?"review":String(
+     input.failure?.failure?.failureKind||
+     input.failure?.failure?.type||
+     "validation"
+    ),
+    summary:diagnostic.summary,
+    rootCause:diagnostic.rootCause,
+    relevantFiles:diagnostic.relevantFiles,
+    repairFiles:repair.files.map(file=>file.path),
+    strategy:diagnostic.strategy,
+    outcome:"resolved",
+    evidence:[
+     `repair-attempt:${attempt}`,
+     `snapshot:${repairEvolution.snapshot?.id||"unchanged"}`,
+     "post-repair validation passed",
+     ...(input.review?["post-repair review approved"]:[])
+    ]
+   });
    recovery=finish(recovery.id,"recovered",validation,null);
    event(
     "team.recovery_completed",
@@ -578,7 +616,8 @@ export async function recoverGoalWork(input:{
       goalId:input.goalId,
       workItemId:input.workItemId,
       assignmentId:input.assignmentId,
-      attempts:attempt
+      attempts:attempt,
+      reviewApproved:review?.approved??null
      }
     }
    );
@@ -586,18 +625,17 @@ export async function recoverGoalWork(input:{
     recovered:true,
     recovery,
     development,
-    validation
+    validation,
+    review:review||null
    };
   }
  }
-
+ const finalFailure=currentFailure();
  const message=
-  validation?.failure?.stderr||
-  validation?.failure?.stdout||
+  finalFailure?.failure?.stderr||
+  finalFailure?.failure?.stdout||
   `Repair budget exhausted after ${attempt} attempts`;
-
  recovery=finish(recovery.id,"exhausted",validation,message);
-
  event(
   "team.recovery_exhausted",
   `Repair budget exhausted after ${attempt} attempts`,
@@ -611,27 +649,17 @@ export async function recoverGoalWork(input:{
     workItemId:input.workItemId,
     assignmentId:input.assignmentId,
     attempts:attempt,
-    fingerprint:failureFingerprint(validation)
+    fingerprint:failureFingerprint(finalFailure),
+    source:reviewRejected?"review":"validation"
    }
   }
  );
-
  return{
   recovered:false,
   exhausted:true,
   recovery,
   development,
-  validation
+  validation,
+  review:review||null
  };
 }
-
-
-
-
-
-
-
-
-
-
-

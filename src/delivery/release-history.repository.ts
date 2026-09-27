@@ -37,6 +37,7 @@ CREATE INDEX IF NOT EXISTS idx_project_releases_commit
 function json<T>(value:any,fallback:T):T{
  try{return value?JSON.parse(String(value)):fallback;}catch{return fallback;}
 }
+
 function map(row:any):ProjectRelease{
  return{
   id:String(row.id),
@@ -62,12 +63,14 @@ function map(row:any):ProjectRelease{
   updatedAt:String(row.updated_at)
  };
 }
+
 export function getProjectRelease(id:string){
  const row=db.prepare(`
   SELECT * FROM project_releases WHERE id=?
  `).get(id);
  return row?map(row):null;
 }
+
 export function findReleaseByPlan(deliveryPlanId:string){
  const row=db.prepare(`
   SELECT *
@@ -77,6 +80,48 @@ export function findReleaseByPlan(deliveryPlanId:string){
  `).get(deliveryPlanId);
  return row?map(row):null;
 }
+
+export function findReleasedProjectCommit(input:{
+ projectId:string;
+ goalId:string|null;
+ commit:string;
+ repositoryFingerprint:string;
+}){
+ const row=input.goalId
+  ?db.prepare(`
+    SELECT *
+    FROM project_releases
+    WHERE project_id=?
+      AND goal_id=?
+      AND commit_hash=?
+      AND repository_fingerprint=?
+      AND status='released'
+    ORDER BY sequence DESC
+    LIMIT 1
+   `).get(
+    input.projectId,
+    input.goalId,
+    input.commit,
+    input.repositoryFingerprint
+   )
+  :db.prepare(`
+    SELECT *
+    FROM project_releases
+    WHERE project_id=?
+      AND goal_id IS NULL
+      AND commit_hash=?
+      AND repository_fingerprint=?
+      AND status='released'
+    ORDER BY sequence DESC
+    LIMIT 1
+   `).get(
+    input.projectId,
+    input.commit,
+    input.repositoryFingerprint
+   );
+ return row?map(row):null;
+}
+
 export function latestProjectRelease(projectId:string){
  const row=db.prepare(`
   SELECT *
@@ -87,6 +132,7 @@ export function latestProjectRelease(projectId:string){
  `).get(projectId);
  return row?map(row):null;
 }
+
 export function listProjectReleases(projectId:string,limit=100){
  return(db.prepare(`
   SELECT *
@@ -96,6 +142,7 @@ export function listProjectReleases(projectId:string,limit=100){
   LIMIT ?
  `).all(projectId,limit) as any[]).map(map);
 }
+
 export function createProjectRelease(input:{
  projectId:string;
  taskId:string|null;
@@ -153,6 +200,7 @@ export function createProjectRelease(input:{
  );
  return getProjectRelease(id)!;
 }
+
 export function setProjectReleaseStatus(id:string,status:ReleaseStatus){
  const time=now();
  db.prepare(`
@@ -162,6 +210,7 @@ export function setProjectReleaseStatus(id:string,status:ReleaseStatus){
  `).run(status,time,id);
  return getProjectRelease(id);
 }
+
 export function deleteProjectReleasesByProject(projectId:string){
  return Number(
   db.prepare(`

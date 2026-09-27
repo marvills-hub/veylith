@@ -8,6 +8,7 @@ import{deliveryVerificationForPlan}from"./delivery-verification.service.js";
 import{
  createProjectRelease,
  findReleaseByPlan,
+ findReleasedProjectCommit,
  latestProjectRelease,
  listProjectReleases,
  setProjectReleaseStatus
@@ -65,6 +66,31 @@ export function recordVerifiedProjectRelease(
   throw new Error(
    "Approved release repository evolution snapshot no longer exists."
   );
+ }
+ const recovered=findReleasedProjectCommit({
+  projectId:plan.projectId,
+  goalId:plan.goalId,
+  commit:publication.commit,
+  repositoryFingerprint:publication.repositoryFingerprint
+ });
+ if(recovered){
+  event(
+   "delivery.release_recovered",
+   `Reused verified project release ${recovered.sequence}.`,
+   {
+    taskId:plan.taskId||undefined,
+    projectId:plan.projectId,
+    component:"release-history",
+    data:{
+     releaseId:recovered.id,
+     sequence:recovered.sequence,
+     commit:recovered.commit,
+     repositoryFingerprint:recovered.repositoryFingerprint,
+     recoveryPlanId:plan.id
+    }
+   }
+  );
+  return recovered;
  }
  const previous=latestProjectRelease(plan.projectId);
  const sequence=(previous?.sequence||0)+1;
@@ -139,12 +165,14 @@ export function recordVerifiedProjectRelease(
  );
  return release;
 }
+
 export function projectReleaseState(projectId:string){
  return{
   latest:latestProjectRelease(projectId),
   releases:listProjectReleases(projectId)
  };
 }
+
 export function projectReleasePrompt(projectId:string,limit=5){
  const releases=listProjectReleases(projectId,limit);
  if(!releases.length){

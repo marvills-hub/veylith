@@ -1,4 +1,4 @@
-﻿import assert from"node:assert/strict";
+import assert from"node:assert/strict";
 import{randomBytes}from"node:crypto";
 import{db}from"../dist/database/database.js";
 import{applyDevelopmentContinuation}from"../dist/development/development-continuation.service.js";
@@ -175,7 +175,7 @@ try{
  const managed=goalExecutionForTask(implDispatch.task_id);
  check("follow-up task uses normal goal execution",()=>managed?.workItemId===impl.id);
 
- const completed=completeGoalTaskExecution(implDispatch.task_id);
+ const completed=completeGoalTaskExecution(implDispatch.task_id,implAssignment.id);
  check("implementation completes through normal execution",()=>Boolean(completed));
 
  const afterImpl=graph();
@@ -207,7 +207,7 @@ try{
   mid.evidence.uncoveredAcceptanceIds.includes("acc_extra")
  );
 
- completeGoalTaskExecution(testDispatch.task_id);
+ completeGoalTaskExecution(testDispatch.task_id,testAssignment.id);
 
  const final=evaluateDevelopmentContinuation(sessionId);
  check("goal becomes satisfied after continuation work",()=>final.goalSatisfied);
@@ -256,4 +256,5 @@ if(failed===0){
  console.log("\nVEYLITH v1.0 BATCH 3 PASS 3.4 NOT YET CLOSED");
  process.exitCode=1;
 }
+
 

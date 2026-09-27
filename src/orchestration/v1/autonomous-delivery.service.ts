@@ -9,6 +9,7 @@ import{prepareAutonomousDeliveryCommit}from"../../delivery/delivery-commit.servi
 import{executeAutonomousPublication}from"../../delivery/delivery-publication.service.js";
 import{verifyAutonomousDelivery}from"../../delivery/delivery-verification.service.js";
 import{recordVerifiedProjectRelease}from"../../delivery/release-history.service.js";
+import{captureRepositoryEvolution,repositoryEvolutionState}from"../../evolution/repository-evolution.service.js";
 import{getProjectGoal}from"../../goals/goal.repository.js";
 import{event}from"../../core/telemetry.js";
 
@@ -25,6 +26,38 @@ function latestSuccessfulEvidence(goalId:string){
  const validation=tester?.result?.validation??(typeof tester?.result?.success==="boolean"?tester.result:null);
  const review=reviewer?.result?.review??null;
  return{results,tester,reviewer,validation,review};
+}
+
+function ensureDeliveryEvolutionSnapshot(input:{
+ projectId:string;
+ taskId:string;
+ goalId:string;
+ workspace:string;
+ validationEvidenceId:string;
+ reviewEvidenceId:string;
+}){
+ const existing=repositoryEvolutionState(input.projectId).latestSnapshot;
+ if(existing)return existing;
+ const captured=captureRepositoryEvolution({
+  projectId:input.projectId,
+  taskId:input.taskId,
+  workspace:input.workspace,
+  type:"baseline",
+  title:"Pre-delivery repository baseline",
+  summary:"Captured validated and approved repository state before autonomous delivery.",
+  evidence:[
+   `goal:${input.goalId}`,
+   `validation:${input.validationEvidenceId}`,
+   `review:${input.reviewEvidenceId}`
+  ],
+  metadata:{
+   source:"autonomous-delivery-recovery",
+   goalId:input.goalId,
+   validationApproved:true,
+   reviewApproved:true
+  }
+ });
+ return captured.snapshot;
 }
 
 export async function executeV1AutonomousDelivery(input:{
@@ -83,9 +116,39 @@ export async function executeV1AutonomousDelivery(input:{
   throw new Error(`Project is not ready for autonomous delivery: ${readiness.blockers.join(" | ")}`);
  }
 
+ const snapshot=ensureDeliveryEvolutionSnapshot({
+  projectId:input.project.id,
+  taskId:input.task.id,
+  goalId:goal.id,
+  workspace:input.project.workspace,
+  validationEvidenceId:evidence.tester?.id??"unknown",
+  reviewEvidenceId:evidence.reviewer?.id??"unknown"
+ });
+
+ if(!snapshot){
+  throw new Error("Unable to establish repository evolution snapshot before autonomous delivery.");
+ }
+
  const plan=createAutonomousDeliveryPlan({
-  readinessId:readiness.id
- } as any);
+  projectId:input.project.id,
+  taskId:input.task.id,
+  goalId:goal.id,
+  readinessId:readiness.id,
+  workspace:input.project.workspace,
+  repositoryName:input.project.slug,
+  targetBranch:input.project.github_branch||"main",
+  visibility:"private",
+  evidence:[
+   `goal:${goal.id}`,
+   `validation:${evidence.tester?.id??"unknown"}`,
+   `review:${evidence.reviewer?.id??"unknown"}`,
+   `repository:${snapshot.id}`
+  ],
+  metadata:{
+   deliveryWorkItemId:input.deliveryWorkItemId,
+   repositorySnapshotId:snapshot.id
+  }
+ });
 
  checkpointAutonomousLifecycle(goal.id,"delivery",{
   status:"delivering",
@@ -98,7 +161,7 @@ export async function executeV1AutonomousDelivery(input:{
   deliveryPlanId:plan.id,
   task:input.task,
   project:input.project
- } as any);
+ });
 
  const fresh=project(input.project.id);
 
@@ -125,7 +188,7 @@ export async function executeV1AutonomousDelivery(input:{
   deliveryPlanId:plan.id,
   remoteVerified:Boolean(github.verified),
   actualCommit:String(github.commit)
- } as any);
+ });
 
  if(!verification.verified||verification.status!=="verified"){
   throw new Error(`Autonomous delivery verification failed: ${verification.error??verification.status}`);
@@ -142,7 +205,7 @@ export async function executeV1AutonomousDelivery(input:{
 
  const release=recordVerifiedProjectRelease({
   deliveryPlanId:plan.id
- } as any);
+ });
 
  checkpointAutonomousLifecycle(goal.id,"release",{
   status:"running",
@@ -169,6 +232,7 @@ export async function executeV1AutonomousDelivery(input:{
  return{
   summary:"Veylith v1 autonomous delivery completed and verified.",
   readiness,
+  snapshot,
   plan,
   commit,
   publication,
@@ -177,4 +241,3 @@ export async function executeV1AutonomousDelivery(input:{
   github
  };
 }
-

@@ -11,7 +11,8 @@ import {
  updateDevelopmentMilestone,
  updateDevelopmentSessionProgress,
  incrementDevelopmentSessionRecovery,
- setDevelopmentSessionState
+ setDevelopmentSessionState,
+ reopenFailedDevelopmentSession
 } from "./development-session.repository.js";
 import type {
  DevelopmentMilestone,
@@ -173,8 +174,21 @@ export function synchronizeDevelopmentSession(sessionId:string):DevelopmentSessi
 }
 
 export function recoverDevelopmentSession(projectId:string){
- const session=getActiveDevelopmentSession(projectId);
- if(!session)return null;
+ let session=getActiveDevelopmentSession(projectId);
+ if(!session){
+  const failed=db.prepare(`
+   SELECT id
+   FROM development_sessions
+   WHERE project_id=? AND status='failed'
+   ORDER BY created_at DESC,id DESC
+   LIMIT 1
+  `).get(projectId) as {id:string}|undefined;
+  if(!failed)return null;
+  session=reopenFailedDevelopmentSession(failed.id);
+ }else{
+  incrementDevelopmentSessionRecovery(session.id);
+  if(session.status==="paused")setDevelopmentSessionState(session.id,"active");
+ }
  const goal=db.prepare("SELECT id FROM project_goals WHERE id=?").get(session.goalId);
  if(!goal){
   const reason=`Orphaned development session: goal ${session.goalId} no longer exists.`;
@@ -190,10 +204,6 @@ export function recoverDevelopmentSession(projectId:string){
    reason
   });
   return developmentSessionSnapshot(session.id);
- }
- incrementDevelopmentSessionRecovery(session.id);
- if(session.status==="paused"){
-  setDevelopmentSessionState(session.id,"active");
  }
  const snapshot=synchronizeDevelopmentSession(session.id);
  event("development.session.recovered",`Recovered development session ${session.id}`,{
@@ -213,7 +223,6 @@ export function recoverDevelopmentSession(projectId:string){
  });
  return snapshot;
 }
-
 export function pauseDevelopmentSession(sessionId:string,reason="Paused"){
  const session=setDevelopmentSessionState(sessionId,"paused",{reason});
  event("development.session.paused",reason,{

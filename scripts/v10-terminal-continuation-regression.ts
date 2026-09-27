@@ -140,7 +140,15 @@ if(!docsDispatch){
 
 check("documentation has production dispatch",Boolean(docsDispatch?.task_id));
 
-const advanced=completeGoalTaskExecution(String(docsDispatch.task_id));
+const docsAssignment=db.prepare(`
+ SELECT id
+ FROM agent_assignments
+ WHERE goal_id=? AND work_item_id=? AND status IN ('assigned','working')
+ ORDER BY created_at DESC
+ LIMIT 1
+`).get(goal.id,docs.id) as any;
+check("documentation has active assignment",Boolean(docsAssignment?.id));
+const advanced=completeGoalTaskExecution(String(docsDispatch.task_id),String(docsAssignment.id));
 check("production completion returned advancement",Boolean(advanced));
 check("terminal continuation created at production boundary",advanced?.terminalContinuation?.created===true);
 
@@ -177,7 +185,15 @@ graph=loadGoalTaskGraph(goal.id);
 check("still exactly one review after repeated authority",graph.items.filter(x=>x.key==="v1-final-review").length===1);
 check("still exactly one delivery after repeated authority",graph.items.filter(x=>x.key==="v1-final-delivery").length===1);
 
-const reviewAdvanced=completeGoalTaskExecution(String(reviewDispatch.task_id));
+const reviewAssignment=db.prepare(`
+ SELECT id
+ FROM agent_assignments
+ WHERE goal_id=? AND work_item_id=? AND status IN ('assigned','working')
+ ORDER BY created_at DESC
+ LIMIT 1
+`).get(goal.id,review.id) as any;
+check("review has active assignment",Boolean(reviewAssignment?.id));
+const reviewAdvanced=completeGoalTaskExecution(String(reviewDispatch.task_id),String(reviewAssignment.id));
 check("review production completion succeeds",Boolean(reviewAdvanced));
 
 graph=loadGoalTaskGraph(goal.id);
@@ -220,3 +236,4 @@ console.log("============================================================");
 
 db.close();
 try{fs.rmSync(dbPath,{force:true});}catch{}
+

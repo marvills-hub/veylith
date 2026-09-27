@@ -5,3 +5,14 @@ workspaces
 .env
 *.log
 .DS_Store
+# Veylith generated / development artifacts
+cleanup-archive/
+tmp/
+logs/
+frontend/dist/
+frontend/.angular/
+*.bak
+*.backup
+*.orig
+*.tmp
+public-angular/

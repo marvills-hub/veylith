@@ -1,12 +1,22 @@
-import{db}from"../src/database/database.js";
+﻿import{db}from"../src/database/database.js";
+import{goalExecutionState}from"../src/team/goal-team-execution.service.js";
 
-const projectId="prj_59e5737b2866ea25";
+const requested=process.argv[2]?.trim();
 
-const project=db.prepare(`
- SELECT *
- FROM projects
- WHERE id=?
-`).get(projectId);
+const project=requested
+ ?db.prepare("SELECT * FROM projects WHERE id=?").get(requested) as any
+ :db.prepare(`
+  SELECT *
+  FROM projects
+  WHERE name LIKE 'Veylith Task API v1 Final Trial%'
+  ORDER BY created_at DESC
+  LIMIT 1
+ `).get() as any;
+
+if(!project){
+ console.log("No Veylith final-trial project exists.");
+ process.exit(0);
+}
 
 const goal=db.prepare(`
  SELECT *
@@ -14,78 +24,146 @@ const goal=db.prepare(`
  WHERE project_id=?
  ORDER BY created_at DESC
  LIMIT 1
-`).get(projectId) as any;
-
-const work=goal?db.prepare(`
- SELECT *
- FROM goal_work_items
- WHERE goal_id=?
- ORDER BY created_at
-`).all(goal.id):[];
-
-const tasks=db.prepare(`
- SELECT *
- FROM tasks
- WHERE project_id=?
- ORDER BY created_at
-`).all(projectId);
-
-const taskIds=(tasks as any[]).map(t=>t.id);
-const jobs=taskIds.length
- ?db.prepare(`
-   SELECT *
-   FROM jobs
-   WHERE task_id IN (${taskIds.map(()=>"?").join(",")})
-   ORDER BY created_at
-  `).all(...taskIds)
- :[];
-
-const sessions=db.prepare(`
- SELECT *
- FROM development_sessions
- WHERE project_id=?
- ORDER BY created_at
-`).all(projectId);
-
-const lifecycle=db.prepare(`
- SELECT *
- FROM autonomous_lifecycle_checkpoints
- WHERE project_id=?
- ORDER BY updated_at DESC
-`).all(projectId);
+`).get(project.id) as any;
 
 console.log("\n============================================================");
-console.log(" VEYLITH v1.0 REAL TRIAL MONITOR");
+console.log("VEYLITH FINAL PRODUCTION TRIAL");
 console.log("============================================================");
+console.log(`Project : ${project.id}`);
+console.log(`Name    : ${project.name}`);
+console.log(`Status  : ${project.status}`);
+console.log(`Phase   : ${project.phase}`);
+console.log(`Progress: ${project.progress}%`);
+console.log(`Workspace: ${project.workspace||"-"}`);
 
-console.log("\n=== PROJECT ===");
-console.log(JSON.stringify(project,null,2));
+if(goal){
+ console.log(`Goal    : ${goal.id}`);
+ console.log(`Goal status: ${goal.status}`);
 
-console.log("\n=== GOAL ===");
-console.log(JSON.stringify(goal,null,2));
+ console.log("\n=== AUTHORITATIVE GOAL STATE ===");
+ try{
+  console.log(goalExecutionState(goal.id));
+ }catch(error){
+  console.log(error instanceof Error?error.message:String(error));
+ }
 
-console.log("\n=== GOAL WORK ===");
-console.log(JSON.stringify(work,null,2));
+ console.log("\n=== WORK GRAPH ===");
+ console.table(db.prepare(`
+  SELECT work_key,title,kind,status
+  FROM goal_work_items
+  WHERE goal_id=?
+  ORDER BY created_at ASC
+ `).all(goal.id));
 
-console.log("\n=== TASKS ===");
-console.log(JSON.stringify(tasks,null,2));
+ console.log("\n=== ASSIGNMENTS ===");
+ console.table(db.prepare(`
+  SELECT
+   w.work_key,
+   a.role,
+   a.status,
+   a.started_at,
+   a.completed_at
+  FROM agent_assignments a
+  JOIN goal_work_items w ON w.id=a.work_item_id
+  WHERE w.goal_id=?
+  ORDER BY a.created_at ASC
+ `).all(goal.id));
 
-console.log("\n=== JOBS ===");
-console.log(JSON.stringify(jobs,null,2));
+ console.log("\n=== ACTIVE / FAILED JOBS ===");
+ console.table(db.prepare(`
+  SELECT
+   j.id,
+   t.title,
+   j.status,
+   j.attempts,
+   j.max_attempts,
+   j.last_error
+  FROM jobs j
+  JOIN tasks t ON t.id=j.task_id
+  WHERE t.project_id=?
+   AND j.status NOT IN ('completed','cancelled')
+  ORDER BY j.created_at ASC
+ `).all(project.id));
+}
 
-console.log("\n=== DEVELOPMENT SESSIONS ===");
-console.log(JSON.stringify(sessions,null,2));
+console.log("\n=== GITHUB ===");
+console.table([{
+ owner:project.github_owner,
+ repository:project.github_repo,
+ url:project.github_url,
+ branch:project.github_branch,
+ commit:project.github_commit,
+ pushedAt:project.github_pushed_at
+}]);
 
-console.log("\n=== V1 LIFECYCLE ===");
-console.log(JSON.stringify(lifecycle,null,2));
+console.log("\n=== PUBLICATION ===");
+const publicationTable=db.prepare(`
+ SELECT *
+ FROM git_publication_state
+ WHERE project_id=?
+`).all(project.id) as any[];
+console.table(publicationTable);
 
-const counts=(work as any[]).reduce((r:any,w:any)=>{
- r[w.status]=(r[w.status]||0)+1;
- return r;
-},{});
+console.log("\n=== RELEASE ===");
+const releaseTable=db.prepare(`
+ SELECT *
+ FROM project_releases
+ WHERE project_id=?
+ ORDER BY sequence DESC
+`).all(project.id) as any[];
+console.table(releaseTable);
 
 console.log("\n============================================================");
-console.log(" WORK STATUS:",JSON.stringify(counts));
-console.log(" PROJECT STATUS:",(project as any)?.status);
-console.log(" LIFECYCLE:",(lifecycle as any[])[0]?.stage||"none","/",(lifecycle as any[])[0]?.status||"none");
-console.log("============================================================");
+
+if(project.status==="completed"){
+ const release=db.prepare(`
+  SELECT *
+  FROM project_releases
+  WHERE project_id=? AND status='released'
+  ORDER BY sequence DESC
+  LIMIT 1
+ `).get(project.id) as any;
+
+ const publication=db.prepare(`
+  SELECT *
+  FROM git_publication_state
+  WHERE project_id=?
+  ORDER BY rowid DESC
+  LIMIT 1
+ `).get(project.id) as any;
+
+ const releaseCommit=
+  release?.commit_hash||
+  release?.commit_sha||
+  release?.github_commit||
+  release?.commit||
+  null;
+
+ const publicationCommit=
+  publication?.commit_hash||
+  publication?.commit_sha||
+  publication?.github_commit||
+  publication?.commit||
+  null;
+
+ const remotelyVerified=
+  publication?.stage==="verified"||
+  Boolean(publication?.verified_at)||
+  Boolean(publication?.remote_verified);
+
+ if(
+  release&&
+  remotelyVerified&&
+  project.github_commit&&
+  (releaseCommit===project.github_commit||publicationCommit===project.github_commit)
+ ){
+  console.log("FINAL PRODUCTION TRIAL: PASS");
+  console.log("Autonomous development, GitHub publication, remote verification and release are complete.");
+ }else{
+  console.log("PROJECT COMPLETED - checking final delivery evidence.");
+ }
+}else if(project.status==="failed"){
+ console.log("FINAL PRODUCTION TRIAL: FAILED");
+}else{
+ console.log("FINAL PRODUCTION TRIAL: RUNNING");
+}

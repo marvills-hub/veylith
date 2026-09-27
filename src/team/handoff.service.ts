@@ -1,4 +1,4 @@
-﻿import {getProjectGoal} from "../goals/goal.repository.js";
+import {getProjectGoal} from "../goals/goal.repository.js";
 import {loadGoalTaskGraph} from "../goals/goal-task-graph.service.js";
 import {
  getAgentAssignment,
@@ -91,12 +91,15 @@ export function bindIncomingHandoffs(workItemId:string,assignmentId:string){
 }
 
 export function consumeIncomingHandoffs(workItemId:string,assignmentId:string){
+ const assignment=getAgentAssignment(assignmentId);
+ if(!assignment)throw new Error(`Assignment not found: ${assignmentId}`);
+ if(assignment.workItemId!==workItemId)throw new Error("Assignment does not own target work item.");
  bindIncomingHandoffs(workItemId,assignmentId);
  return listIncomingWorkHandoffs(workItemId).map(handoff=>{
+  if(handoff.status==="consumed")return handoff;
   if(handoff.toAssignmentId!==assignmentId){
    throw new Error(`Handoff ${handoff.id} belongs to another assignment.`);
   }
-  if(handoff.status==="consumed")return handoff;
   return setAgentHandoffStatus(handoff.id,"consumed");
  });
 }

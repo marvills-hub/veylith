@@ -1,0 +1,10 @@
+﻿:host{display:block}
+.brand{display:flex;flex-direction:column;gap:3px}
+.brand-row{display:flex;align-items:center;gap:8px;width:max-content}
+strong{font-size:19px;line-height:1;font-weight:900;letter-spacing:5px;color:#f4e9e6}
+em{font-style:normal;color:#ff3b38}
+small{font-size:8px;letter-spacing:3px;color:#b27b73}
+.live{display:flex;align-items:center;gap:5px;font-size:8px;font-weight:800;letter-spacing:1px;color:#796b68}
+.live i{width:6px;height:6px;border-radius:50%;background:#68352f}
+.live.online{color:#bdb1ad}
+.live.online i{background:#49e48b;box-shadow:0 0 8px #49e48b}

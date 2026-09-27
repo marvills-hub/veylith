@@ -1,4 +1,4 @@
-import path from "node:path";
+﻿import path from "node:path";
 import {readdir,lstat,readFile} from "node:fs/promises";
 import {existsSync} from "node:fs";
 import type {RepositoryFile,RepositoryFileKind,RepositoryManifest,RepositoryProfile} from "./repository.types.js";
@@ -13,6 +13,9 @@ const languageMap:Record<string,string>={
  ".dart":"Dart",".vue":"Vue",".svelte":"Svelte",".sql":"SQL",".sh":"Shell",".ps1":"PowerShell",".yml":"YAML",".yaml":"YAML",
  ".xml":"XML",".toml":"TOML",".rb":"Ruby",".swift":"Swift",".c":"C",".h":"C/C++",".cpp":"C++",".hpp":"C++"
 };
+const MAX_FILES=Math.max(1000,Number(process.env.REPOSITORY_SCAN_MAX_FILES||25000));
+const MAX_DEPTH=Math.max(4,Number(process.env.REPOSITORY_SCAN_MAX_DEPTH||32));
+const MAX_SCAN_MS=Math.max(5000,Number(process.env.REPOSITORY_SCAN_TIMEOUT_MS||30000));
 
 function normalized(relative:string){return relative.replaceAll("\\","/")}
 function isSecret(relative:string){
@@ -58,8 +61,23 @@ export async function scanRepository(workspace:string):Promise<RepositoryProfile
  const root=path.resolve(workspace);
  if(!existsSync(root))throw new Error(`Repository workspace does not exist: ${root}`);
  const files:RepositoryFile[]=[];
- async function walk(current:string){
-  for(const entry of await readdir(current,{withFileTypes:true})){
+ const started=Date.now();
+ const visited=new Set<string>();
+ const checkLimits=()=>{
+  if(Date.now()-started>MAX_SCAN_MS)throw new Error(`Repository scan exceeded ${MAX_SCAN_MS}ms limit.`);
+  if(files.length>=MAX_FILES)throw new Error(`Repository scan exceeded ${MAX_FILES} file limit.`);
+ };
+ async function walk(current:string,depth:number){
+  checkLimits();
+  if(depth>MAX_DEPTH)throw new Error(`Repository scan exceeded ${MAX_DEPTH} directory depth limit.`);
+  const resolved=path.resolve(current);
+  const key=process.platform==="win32"?resolved.toLowerCase():resolved;
+  if(visited.has(key))return;
+  visited.add(key);
+  let entries;
+  try{entries=await readdir(current,{withFileTypes:true})}catch{return}
+  for(const entry of entries){
+   checkLimits();
    if(ignored.has(entry.name))continue;
    const full=path.join(current,entry.name);
    const relative=normalized(path.relative(root,full));
@@ -67,7 +85,12 @@ export async function scanRepository(workspace:string):Promise<RepositoryProfile
    let info;
    try{info=await lstat(full)}catch{continue}
    if(info.isSymbolicLink())continue;
-   if(info.isDirectory()){await walk(full);continue}
+   if(info.isDirectory()){
+    if(typeof info.isSymbolicLink==="function"&&info.isSymbolicLink())continue;
+    await walk(full,depth+1);
+    continue;
+   }
+   if(!info.isFile())continue;
    const extension=path.extname(entry.name).toLowerCase();
    files.push({
     path:relative,
@@ -80,7 +103,7 @@ export async function scanRepository(workspace:string):Promise<RepositoryProfile
    });
   }
  }
- await walk(root);
+ await walk(root,0);
  files.sort((a,b)=>a.path.localeCompare(b.path));
  const manifests=(await Promise.all(files.filter(file=>path.posix.basename(file.path).toLowerCase()==="package.json").map(file=>manifest(root,file.path)))).filter(Boolean) as RepositoryManifest[];
  const languages:Record<string,number>={};

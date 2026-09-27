@@ -1,4 +1,4 @@
-﻿import crypto from "node:crypto";
+import crypto from "node:crypto";
 import {db} from "../database/database.js";
 import {now} from "../config/config.js";
 import type {
@@ -200,6 +200,26 @@ export function setDevelopmentSessionState(
  return getDevelopmentSession(id)!;
 }
 
+export function reopenFailedDevelopmentSession(id:string){
+ const current=getDevelopmentSession(id);
+ if(!current)throw new Error(`Development session not found: ${id}`);
+ if(current.status!=="failed")return current;
+ const time=now();
+ db.prepare(`
+  UPDATE development_sessions
+  SET status='active',
+      recovery_count=recovery_count+1,
+      pause_reason=NULL,
+      failure=NULL,
+      paused_at=NULL,
+      resumed_at=?,
+      completed_at=NULL,
+      last_checkpoint_at=?,
+      updated_at=?
+  WHERE id=? AND status='failed'
+ `).run(time,time,time,id);
+ return getDevelopmentSession(id)!;
+}
 export function updateDevelopmentSessionProgress(
  id:string,
  progress:number,

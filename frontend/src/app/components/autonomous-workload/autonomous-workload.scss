@@ -1,0 +1,9 @@
+﻿:host{display:block}
+section{min-height:350px}
+header{height:36px;display:flex;align-items:center;justify-content:space-between;padding:0 9px;border-bottom:1px solid #3d1411}
+h2{margin:0;font-size:10px;letter-spacing:1px;color:#ff5b52}header span{font-size:8px;font-weight:800}
+.workload{display:flex;flex-direction:column;justify-content:center;gap:15px;padding:35px 10px}
+.row{display:grid;grid-template-columns:80px minmax(0,1fr) 65px;gap:10px;align-items:center}
+.row span,.row b{font-size:6px}.row b{text-align:right;color:#887b78}
+.row>div{height:6px;background:#1b0908}.row i{display:block;height:100%;min-width:8px;background:linear-gradient(90deg,#d73530,#f1b63d)}
+.row i.working{background:#40dce4}.row i.completed{background:#4cdb86}.row i.failed{background:#ff4149}

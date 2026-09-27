@@ -1,0 +1,10 @@
+﻿:host{display:block}
+section{height:165px}
+header{height:47px;display:flex;align-items:flex-start;justify-content:space-between;padding:8px}
+h2{margin:0;font-size:10px;line-height:12px;letter-spacing:1px;color:#ff5b52}header span{max-width:65%;font-size:7px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.roadmap{display:flex;align-items:center;padding:38px 15px 0}
+.roadmap>div{position:relative;flex:1;text-align:center}
+.roadmap>div:not(:last-child):after{content:"";position:absolute;left:55%;right:-45%;top:6px;height:1px;background:#54211e}
+i{display:block;width:13px;height:13px;margin:auto;border:1px solid #572622;border-radius:50%;background:#090404;position:relative;z-index:2}
+small{display:block;margin-top:8px;font-size:5px;color:#756966}
+.active i{border-color:#42dce6;box-shadow:0 0 9px #42dce6}.active small{color:#42dce6}

@@ -14,6 +14,7 @@ import {
 } from "./provider-circuit.service.js";
 import {resumeTask} from "./task.service.js";
 import {recoverJobs} from "../jobs/job-recovery.service.js";
+import {recoverExpiredJobs} from "../jobs/job.repository.js";
 import {enqueueTask} from "../jobs/job.service.js";
 
 let checking=false;
@@ -24,6 +25,36 @@ export function recoverInterruptedTasks(){
  const developmentSessions=recoverActiveDevelopmentSessions();
  setWorker("online","idle");
  return result.local+result.expired+result.reconciled;
+}
+
+let liveJobRecoveryRunning=false;
+
+export function recoverLiveJobs(){
+ if(liveJobRecoveryRunning)return{
+  local:0,
+  runtime:0,
+  legacy:0,
+  expired:0,
+  reconciled:0,
+  staleRuntimes:0
+ };
+ liveJobRecoveryRunning=true;
+ try{
+  const result=recoverExpiredJobs();
+  const expired=typeof result==="number"
+   ?result
+   :Number((result as any)?.expired??(result as any)?.count??0);
+  return{
+   local:0,
+   runtime:0,
+   legacy:0,
+   expired,
+   reconciled:0,
+   staleRuntimes:0
+  };
+ }finally{
+  liveJobRecoveryRunning=false;
+ }
 }
 
 export async function resumePausedAIJobs(){
@@ -153,6 +184,7 @@ export async function resumePausedAIJobs(){
   checking=false;
  }
 }
+
 
 
 
