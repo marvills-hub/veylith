@@ -239,9 +239,12 @@ export function createApp(){
   }
  });
 
+ app.get("/v1",(_req,res)=>res.sendFile(path.resolve("public/v1/index.html")));
+ app.get("/v1/*path",(_req,res)=>res.sendFile(path.resolve("public/v1/index.html")));
  app.use((_req,res)=>res.sendFile(path.resolve("public/index.html")));
  return app;
 }
+
 
 
 

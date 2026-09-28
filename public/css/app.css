@@ -7242,7 +7242,7 @@ Desktop target:
   }
 
   .v35-responsive .v35-center .activity-terminal {
-    margin-top: -265px !important;
+    margin-top: -220px !important;
 
     height: calc(100vh - 410px) !important;
     min-height: 315px !important;
@@ -7490,703 +7490,678 @@ avoid showing two.
 
 /* END VEYLITH SYSTEM LIVE V42 */
 
-.veylith-health-monitor{
- position:relative;
- width:100%;
- height:190px;
- min-height:190px;
- box-sizing:border-box;
- margin:0 0 6px;
- padding:10px 14px 7px;
- border-top:1px solid rgba(143,36,29,.5);
- border-bottom:1px solid rgba(143,36,29,.35);
- background:
-  linear-gradient(180deg,rgba(18,3,3,.72),rgba(4,1,1,.12)),
-  radial-gradient(ellipse at 50% 100%,rgba(140,25,18,.10),transparent 70%);
- overflow:hidden;
+.veylith-health-monitor {
+  position: relative;
+  width: 100%;
+  height: 190px;
+  min-height: 190px;
+  box-sizing: border-box;
+  margin: 0 0 6px;
+  padding: 10px 14px 7px;
+  border-top: 1px solid rgba(143, 36, 29, 0.5);
+  border-bottom: 1px solid rgba(143, 36, 29, 0.35);
+  background: linear-gradient(180deg, rgba(18, 3, 3, 0.72), rgba(4, 1, 1, 0.12)), radial-gradient(ellipse at 50% 100%, rgba(140, 25, 18, 0.1), transparent 70%);
+  overflow: hidden;
 }
-.vhm-head{
- position:relative;
- z-index:2;
- display:flex;
- align-items:flex-start;
- justify-content:space-between;
- height:34px;
+.vhm-head {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  height: 34px;
 }
-.vhm-head>div:first-child{
- display:flex;
- flex-direction:column;
- gap:3px;
+.vhm-head > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
-.vhm-head strong{
- color:#e0ad52;
- font-size:11px;
- letter-spacing:.16em;
+.vhm-head strong {
+  color: #e0ad52;
+  font-size: 11px;
+  letter-spacing: 0.16em;
 }
-.vhm-head span{
- color:#76645b;
- font-size:8px;
- letter-spacing:.09em;
+.vhm-head span {
+  color: #76645b;
+  font-size: 8px;
+  letter-spacing: 0.09em;
 }
-.vhm-score{
- display:flex;
- align-items:baseline;
- gap:8px;
+.vhm-score {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
-.vhm-score b{
- color:#e0ad52;
- font-size:15px;
- letter-spacing:.04em;
+.vhm-score b {
+  color: #e0ad52;
+  font-size: 15px;
+  letter-spacing: 0.04em;
 }
-.vhm-score span{
- color:#e0ad52;
- font-size:8px;
- font-weight:700;
- letter-spacing:.12em;
+.vhm-score span {
+  color: #e0ad52;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
 }
-.vhm-chart{
- position:absolute;
- left:14px;
- right:14px;
- top:38px;
- height:118px;
+.vhm-chart {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 38px;
+  height: 118px;
 }
-.vhm-chart svg{
- display:block;
- width:100%;
- height:100%;
- overflow:visible;
+.vhm-chart svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
-.vhm-grid line{
- stroke:#5b1a16;
- stroke-width:.6;
- opacity:.35;
+.vhm-grid line {
+  stroke: #5b1a16;
+  stroke-width: 0.6;
+  opacity: 0.35;
 }
-.vhm-line{
- fill:none;
- stroke:#d92218;
- stroke-width:2.2;
- vector-effect:non-scaling-stroke;
- filter:url(#vhmGlow);
+.vhm-line {
+  fill: none;
+  stroke: #d92218;
+  stroke-width: 2.2;
+  vector-effect: non-scaling-stroke;
+  filter: url(#vhmGlow);
 }
-.vhm-area{
- fill:url(#vhmArea);
- stroke:none;
+.vhm-area {
+  fill: url(#vhmArea);
+  stroke: none;
 }
-.vhm-scale{
- position:absolute;
- inset:0;
- display:flex;
- flex-direction:column;
- justify-content:space-between;
- pointer-events:none;
+.vhm-scale {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
 }
-.vhm-scale span{
- color:#4f3934;
- font-size:7px;
- transform:translateY(-4px);
+.vhm-scale span {
+  color: #4f3934;
+  font-size: 7px;
+  transform: translateY(-4px);
 }
-.vhm-foot{
- position:absolute;
- left:14px;
- right:14px;
- bottom:5px;
- display:flex;
- justify-content:space-between;
- gap:10px;
- color:#705a53;
- font-size:7px;
- letter-spacing:.06em;
+.vhm-foot {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 5px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: #705a53;
+  font-size: 7px;
+  letter-spacing: 0.06em;
 }
 .veylith-health-monitor[data-state="degraded"] .vhm-score b,
-.veylith-health-monitor[data-state="degraded"] .vhm-score span{color:#e0ad52}
+.veylith-health-monitor[data-state="degraded"] .vhm-score span {
+  color: #e0ad52;
+}
 .veylith-health-monitor[data-state="warning"] .vhm-score b,
-.veylith-health-monitor[data-state="warning"] .vhm-score span{color:#ff6c26}
+.veylith-health-monitor[data-state="warning"] .vhm-score span {
+  color: #ff6c26;
+}
 .veylith-health-monitor[data-state="critical"] .vhm-score b,
-.veylith-health-monitor[data-state="critical"] .vhm-score span{color:#ff281c}
+.veylith-health-monitor[data-state="critical"] .vhm-score span {
+  color: #ff281c;
+}
 
 /* VEYLITH HEALTH READABILITY FIX */
-.veylith-health-monitor{
- position:relative!important;
- display:block!important;
- width:100%!important;
- height:178px!important;
- min-height:178px!important;
- max-height:178px!important;
- margin:0!important;
- padding:12px 16px 8px!important;
- box-sizing:border-box!important;
- overflow:hidden!important;
- isolation:isolate!important;
- z-index:30!important;
- background:
-  linear-gradient(180deg,rgba(15,3,3,.98),rgba(8,2,2,.96))!important;
- border-top:1px solid rgba(217,34,24,.45)!important;
- border-bottom:1px solid rgba(217,34,24,.60)!important;
+.veylith-health-monitor {
+  position: relative !important;
+  display: block !important;
+  width: 100% !important;
+  height: 178px !important;
+  min-height: 178px !important;
+  max-height: 178px !important;
+  margin: 0 !important;
+  padding: 12px 16px 8px !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+  isolation: isolate !important;
+  z-index: 30 !important;
+  background: linear-gradient(180deg, rgba(15, 3, 3, 0.98), rgba(8, 2, 2, 0.96)) !important;
+  border-top: 1px solid rgba(217, 34, 24, 0.45) !important;
+  border-bottom: 1px solid rgba(217, 34, 24, 0.6) !important;
 }
 
-.veylith-health-monitor + #veylithScene{
- position:relative!important;
- z-index:1!important;
+.veylith-health-monitor + #veylithScene {
+  position: relative !important;
+  z-index: 1 !important;
 }
 
-.veylith-health-monitor .vhm-head{
- position:absolute!important;
- top:10px!important;
- left:16px!important;
- right:16px!important;
- height:30px!important;
- display:flex!important;
- justify-content:space-between!important;
- align-items:flex-start!important;
- z-index:5!important;
- pointer-events:none!important;
+.veylith-health-monitor .vhm-head {
+  position: absolute !important;
+  top: 10px !important;
+  left: 16px !important;
+  right: 16px !important;
+  height: 30px !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: flex-start !important;
+  z-index: 5 !important;
+  pointer-events: none !important;
 }
 
-.veylith-health-monitor .vhm-head>div:first-child{
- display:flex!important;
- flex-direction:column!important;
- gap:4px!important;
- min-width:0!important;
+.veylith-health-monitor .vhm-head > div:first-child {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  min-width: 0 !important;
 }
 
-.veylith-health-monitor .vhm-head strong{
- display:block!important;
- color:#e0ad52!important;
- font-size:12px!important;
- line-height:14px!important;
- font-weight:800!important;
- letter-spacing:.14em!important;
- white-space:nowrap!important;
- opacity:1!important;
- text-shadow:0 0 10px rgba(224,173,82,.28)!important;
+.veylith-health-monitor .vhm-head strong {
+  display: block !important;
+  color: #e0ad52 !important;
+  font-size: 12px !important;
+  line-height: 14px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.14em !important;
+  white-space: nowrap !important;
+  opacity: 1 !important;
+  text-shadow: 0 0 10px rgba(224, 173, 82, 0.28) !important;
 }
 
-.veylith-health-monitor .vhm-head>div:first-child>span{
- display:block!important;
- color:#d5bbb2!important;
- font-size:9px!important;
- line-height:11px!important;
- font-weight:600!important;
- letter-spacing:.05em!important;
- white-space:nowrap!important;
- overflow:hidden!important;
- text-overflow:ellipsis!important;
- max-width:600px!important;
- opacity:1!important;
+.veylith-health-monitor .vhm-head > div:first-child > span {
+  display: block !important;
+  color: #d5bbb2 !important;
+  font-size: 9px !important;
+  line-height: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.05em !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 600px !important;
+  opacity: 1 !important;
 }
 
-.veylith-health-monitor .vhm-score{
- display:flex!important;
- flex-direction:row!important;
- align-items:baseline!important;
- justify-content:flex-end!important;
- gap:9px!important;
- min-width:130px!important;
- white-space:nowrap!important;
+.veylith-health-monitor .vhm-score {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: baseline !important;
+  justify-content: flex-end !important;
+  gap: 9px !important;
+  min-width: 130px !important;
+  white-space: nowrap !important;
 }
 
-.veylith-health-monitor .vhm-score b{
- color:#e0ad52!important;
- font-size:17px!important;
- line-height:18px!important;
- font-weight:900!important;
- opacity:1!important;
+.veylith-health-monitor .vhm-score b {
+  color: #e0ad52 !important;
+  font-size: 17px !important;
+  line-height: 18px !important;
+  font-weight: 900 !important;
+  opacity: 1 !important;
 }
 
-.veylith-health-monitor .vhm-score span{
- color:#e0ad52!important;
- font-size:9px!important;
- line-height:11px!important;
- font-weight:800!important;
- letter-spacing:.09em!important;
- opacity:1!important;
+.veylith-health-monitor .vhm-score span {
+  color: #e0ad52 !important;
+  font-size: 9px !important;
+  line-height: 11px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.09em !important;
+  opacity: 1 !important;
 }
 
-.veylith-health-monitor .vhm-chart{
- position:absolute!important;
- top:47px!important;
- left:38px!important;
- right:16px!important;
- height:91px!important;
- z-index:2!important;
- overflow:visible!important;
+.veylith-health-monitor .vhm-chart {
+  position: absolute !important;
+  top: 47px !important;
+  left: 38px !important;
+  right: 16px !important;
+  height: 91px !important;
+  z-index: 2 !important;
+  overflow: visible !important;
 }
 
-.veylith-health-monitor .vhm-chart svg{
- display:block!important;
- width:100%!important;
- height:91px!important;
- overflow:hidden!important;
+.veylith-health-monitor .vhm-chart svg {
+  display: block !important;
+  width: 100% !important;
+  height: 91px !important;
+  overflow: hidden !important;
 }
 
-.veylith-health-monitor .vhm-grid line{
- stroke:#78312b!important;
- stroke-width:.8!important;
- opacity:.42!important;
+.veylith-health-monitor .vhm-grid line {
+  stroke: #78312b !important;
+  stroke-width: 0.8 !important;
+  opacity: 0.42 !important;
 }
 
-.veylith-health-monitor .vhm-line{
- fill:none!important;
- stroke:#ff3328!important;
- stroke-width:2.2!important;
- vector-effect:non-scaling-stroke!important;
- opacity:1!important;
- filter:url(#vhmGlow)!important;
+.veylith-health-monitor .vhm-line {
+  fill: none !important;
+  stroke: #ff3328 !important;
+  stroke-width: 2.2 !important;
+  vector-effect: non-scaling-stroke !important;
+  opacity: 1 !important;
+  filter: url(#vhmGlow) !important;
 }
 
-.veylith-health-monitor .vhm-area{
- fill:url(#vhmArea)!important;
- opacity:1!important;
+.veylith-health-monitor .vhm-area {
+  fill: url(#vhmArea) !important;
+  opacity: 1 !important;
 }
 
-.veylith-health-monitor .vhm-scale{
- position:absolute!important;
- top:0!important;
- bottom:0!important;
- left:-27px!important;
- width:24px!important;
- display:flex!important;
- flex-direction:column!important;
- justify-content:space-between!important;
- align-items:flex-end!important;
- pointer-events:none!important;
+.veylith-health-monitor .vhm-scale {
+  position: absolute !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  left: -27px !important;
+  width: 24px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  align-items: flex-end !important;
+  pointer-events: none !important;
 }
 
-.veylith-health-monitor .vhm-scale span{
- display:block!important;
- color:#a98b82!important;
- font-size:8px!important;
- line-height:8px!important;
- font-weight:600!important;
- opacity:1!important;
- transform:none!important;
+.veylith-health-monitor .vhm-scale span {
+  display: block !important;
+  color: #a98b82 !important;
+  font-size: 8px !important;
+  line-height: 8px !important;
+  font-weight: 600 !important;
+  opacity: 1 !important;
+  transform: none !important;
 }
 
-.veylith-health-monitor .vhm-foot{
- position:absolute!important;
- left:16px!important;
- right:16px!important;
- bottom:8px!important;
- height:16px!important;
- display:grid!important;
- grid-template-columns:1fr 1fr 1fr 1fr!important;
- align-items:center!important;
- gap:12px!important;
- color:#b79b91!important;
- font-size:8px!important;
- line-height:10px!important;
- font-weight:600!important;
- letter-spacing:.05em!important;
- opacity:1!important;
- z-index:5!important;
+.veylith-health-monitor .vhm-foot {
+  position: absolute !important;
+  left: 16px !important;
+  right: 16px !important;
+  bottom: 8px !important;
+  height: 16px !important;
+  display: grid !important;
+  grid-template-columns: 1fr 1fr 1fr 1fr !important;
+  align-items: center !important;
+  gap: 12px !important;
+  color: #b79b91 !important;
+  font-size: 8px !important;
+  line-height: 10px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.05em !important;
+  opacity: 1 !important;
+  z-index: 5 !important;
 }
 
-.veylith-health-monitor .vhm-foot span{
- display:block!important;
- min-width:0!important;
- white-space:nowrap!important;
- overflow:hidden!important;
- text-overflow:ellipsis!important;
+.veylith-health-monitor .vhm-foot span {
+  display: block !important;
+  min-width: 0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
 }
 
 .veylith-health-monitor .vhm-foot span:nth-child(2),
-.veylith-health-monitor .vhm-foot span:nth-child(3){
- text-align:center!important;
+.veylith-health-monitor .vhm-foot span:nth-child(3) {
+  text-align: center !important;
 }
 
-.veylith-health-monitor .vhm-foot span:last-child{
- text-align:right!important;
+.veylith-health-monitor .vhm-foot span:last-child {
+  text-align: right !important;
 }
 
 .veylith-health-monitor[data-state="stable"] .vhm-score b,
-.veylith-health-monitor[data-state="stable"] .vhm-score span{
- color:#63df91!important;
+.veylith-health-monitor[data-state="stable"] .vhm-score span {
+  color: #63df91 !important;
 }
 
 .veylith-health-monitor[data-state="degraded"] .vhm-score b,
-.veylith-health-monitor[data-state="degraded"] .vhm-score span{
- color:#e0ad52!important;
+.veylith-health-monitor[data-state="degraded"] .vhm-score span {
+  color: #e0ad52 !important;
 }
 
 .veylith-health-monitor[data-state="warning"] .vhm-score b,
-.veylith-health-monitor[data-state="warning"] .vhm-score span{
- color:#ff8a38!important;
+.veylith-health-monitor[data-state="warning"] .vhm-score span {
+  color: #ff8a38 !important;
 }
 
 .veylith-health-monitor[data-state="critical"] .vhm-score b,
-.veylith-health-monitor[data-state="critical"] .vhm-score span{
- color:#ff3026!important;
+.veylith-health-monitor[data-state="critical"] .vhm-score span {
+  color: #ff3026 !important;
 }
 
-@media(max-width:1200px){
- .veylith-health-monitor .vhm-head>div:first-child>span{
-  max-width:360px!important;
- }
- .veylith-health-monitor .vhm-foot{
-  grid-template-columns:1fr 1fr!important;
-  row-gap:3px!important;
-  height:25px!important;
-  bottom:4px!important;
- }
+@media (max-width: 1200px) {
+  .veylith-health-monitor .vhm-head > div:first-child > span {
+    max-width: 360px !important;
+  }
+  .veylith-health-monitor .vhm-foot {
+    grid-template-columns: 1fr 1fr !important;
+    row-gap: 3px !important;
+    height: 25px !important;
+    bottom: 4px !important;
+  }
 }
-
 
 /* VEYLITH HEALTH MINIMAL OVERLAY */
-.veylith-health-monitor{
- position:absolute!important;
- top:0!important;
- left:0!important;
- right:0!important;
- width:100%!important;
- height:145px!important;
- min-height:0!important;
- max-height:none!important;
- margin:0!important;
- padding:0!important;
- border:0!important;
- background:transparent!important;
- overflow:hidden!important;
- pointer-events:none!important;
- z-index:8!important;
- isolation:auto!important;
+.veylith-health-monitor {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  height: 145px !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+  z-index: 8 !important;
+  isolation: auto !important;
 }
 
-.veylith-health-monitor + #veylithScene{
- position:relative!important;
- z-index:1!important;
+.veylith-health-monitor + #veylithScene {
+  position: relative !important;
+  z-index: 1 !important;
 }
 
 .veylith-health-monitor .vhm-head,
 .veylith-health-monitor .vhm-scale,
-.veylith-health-monitor .vhm-foot{
- display:none!important;
+.veylith-health-monitor .vhm-foot {
+  display: none !important;
 }
 
-.veylith-health-monitor .vhm-chart{
- position:absolute!important;
- top:0!important;
- left:0!important;
- right:0!important;
- width:100%!important;
- height:145px!important;
- z-index:1!important;
- overflow:hidden!important;
+.veylith-health-monitor .vhm-chart {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  height: 145px !important;
+  z-index: 1 !important;
+  overflow: hidden !important;
 }
 
-.veylith-health-monitor .vhm-chart svg{
- display:block!important;
- width:100%!important;
- height:145px!important;
- overflow:hidden!important;
+.veylith-health-monitor .vhm-chart svg {
+  display: block !important;
+  width: 100% !important;
+  height: 145px !important;
+  overflow: hidden !important;
 }
 
-.veylith-health-monitor .vhm-grid{
- display:none!important;
+.veylith-health-monitor .vhm-grid {
+  display: none !important;
 }
 
-.veylith-health-monitor .vhm-line{
- fill:none!important;
- stroke:#e3261c!important;
- stroke-width:1.7!important;
- vector-effect:non-scaling-stroke!important;
- opacity:.88!important;
- filter:url(#vhmGlow)!important;
+.veylith-health-monitor .vhm-line {
+  fill: none !important;
+  stroke: #e3261c !important;
+  stroke-width: 1.7 !important;
+  vector-effect: non-scaling-stroke !important;
+  opacity: 0.88 !important;
+  filter: url(#vhmGlow) !important;
 }
 
-.veylith-health-monitor .vhm-area{
- fill:url(#vhmArea)!important;
- opacity:.16!important;
+.veylith-health-monitor .vhm-area {
+  fill: url(#vhmArea) !important;
+  opacity: 0.16 !important;
 }
-
 
 /* VEYLITH LIVE HEALTH WAVE V2 */
-.veylith-health-monitor{
- position:absolute!important;
- top:2px!important;
- left:0!important;
- right:0!important;
- width:100%!important;
- height:72px!important;
- min-height:72px!important;
- max-height:72px!important;
- margin:0!important;
- padding:0!important;
- border:0!important;
- background:transparent!important;
- overflow:hidden!important;
- pointer-events:none!important;
- z-index:8!important;
+.veylith-health-monitor {
+  position: absolute !important;
+  top: 2px !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  height: 72px !important;
+  min-height: 72px !important;
+  max-height: 72px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+  z-index: 8 !important;
 }
 
 .veylith-health-monitor .vhm-head,
 .veylith-health-monitor .vhm-foot,
 .veylith-health-monitor .vhm-scale,
-.veylith-health-monitor .vhm-grid{
- display:none!important;
+.veylith-health-monitor .vhm-grid {
+  display: none !important;
 }
 
-.veylith-health-monitor .vhm-chart{
- position:absolute!important;
- inset:0!important;
- width:100%!important;
- height:72px!important;
- overflow:hidden!important;
+.veylith-health-monitor .vhm-chart {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 72px !important;
+  overflow: hidden !important;
 }
 
-.veylith-health-monitor .vhm-chart svg{
- display:block!important;
- width:100%!important;
- height:72px!important;
- overflow:hidden!important;
+.veylith-health-monitor .vhm-chart svg {
+  display: block !important;
+  width: 100% !important;
+  height: 72px !important;
+  overflow: hidden !important;
 }
 
-.veylith-health-monitor .vhm-line{
- fill:none!important;
- stroke:#e72a20!important;
- stroke-width:1.55!important;
- vector-effect:non-scaling-stroke!important;
- stroke-linecap:round!important;
- stroke-linejoin:round!important;
- opacity:.92!important;
- filter:url(#vhmGlow)!important;
+.veylith-health-monitor .vhm-line {
+  fill: none !important;
+  stroke: #e72a20 !important;
+  stroke-width: 1.55 !important;
+  vector-effect: non-scaling-stroke !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+  opacity: 0.92 !important;
+  filter: url(#vhmGlow) !important;
 }
 
-.veylith-health-monitor .vhm-area{
- display:none!important;
+.veylith-health-monitor .vhm-area {
+  display: none !important;
 }
-
 
 /* VEYLITH HEALTH TREND GRAPH V3 */
-.veylith-health-monitor{
- position:absolute!important;
- top:0!important;
- left:1%!important;
- right:1%!important;
- width:98%!important;
- height:105px!important;
- min-height:105px!important;
- max-height:105px!important;
- overflow:hidden!important;
- pointer-events:none!important;
- background:transparent!important;
- border:0!important;
- z-index:3!important;
+.veylith-health-monitor {
+  position: absolute !important;
+  top: 0 !important;
+  left: 1% !important;
+  right: 1% !important;
+  width: 98% !important;
+  height: 105px !important;
+  min-height: 105px !important;
+  max-height: 105px !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+  background: transparent !important;
+  border: 0 !important;
+  z-index: 3 !important;
 }
 
 .veylith-health-monitor .vhm-head,
 .veylith-health-monitor .vhm-foot,
-.veylith-health-monitor .vhm-scale{
- display:none!important;
+.veylith-health-monitor .vhm-scale {
+  display: none !important;
 }
 
-.veylith-health-monitor .vhm-chart{
- position:absolute!important;
- top:0!important;
- left:0!important;
- right:0!important;
- height:105px!important;
- overflow:hidden!important;
+.veylith-health-monitor .vhm-chart {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  height: 105px !important;
+  overflow: hidden !important;
 }
 
-.veylith-health-monitor .vhm-chart:before{
- content:""!important;
- position:absolute!important;
- inset:0!important;
- background-image:
-  linear-gradient(rgba(128,22,18,.13) 1px,transparent 1px),
-  linear-gradient(90deg,rgba(128,22,18,.13) 1px,transparent 1px)!important;
- background-size:100% 21px,50px 100%!important;
- mask-image:linear-gradient(
-  90deg,
-  transparent,
-  black 8%,
-  black 92%,
-  transparent
- )!important;
- opacity:.8!important;
+.veylith-health-monitor .vhm-chart:before {
+  content: "" !important;
+  position: absolute !important;
+  inset: 0 !important;
+  background-image: linear-gradient(rgba(128, 22, 18, 0.13) 1px, transparent 1px), linear-gradient(90deg, rgba(128, 22, 18, 0.13) 1px, transparent 1px) !important;
+  background-size:
+    100% 21px,
+    50px 100% !important;
+  mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent) !important;
+  opacity: 0.8 !important;
 }
 
-.veylith-health-monitor .vhm-chart svg{
- position:relative!important;
- z-index:2!important;
- display:block!important;
- width:100%!important;
- height:105px!important;
- overflow:hidden!important;
+.veylith-health-monitor .vhm-chart svg {
+  position: relative !important;
+  z-index: 2 !important;
+  display: block !important;
+  width: 100% !important;
+  height: 105px !important;
+  overflow: hidden !important;
 }
 
-.veylith-health-monitor .vhm-grid{
- display:none!important;
+.veylith-health-monitor .vhm-grid {
+  display: none !important;
 }
 
-.veylith-health-monitor .vhm-line{
- display:block!important;
- fill:none!important;
- stroke:#f12d24!important;
- stroke-width:2!important;
- vector-effect:non-scaling-stroke!important;
- stroke-linejoin:round!important;
- stroke-linecap:round!important;
- opacity:.96!important;
- filter:
-  drop-shadow(0 0 2px rgba(255,31,22,.95))
-  drop-shadow(0 0 7px rgba(208,20,13,.55))!important;
+.veylith-health-monitor .vhm-line {
+  display: block !important;
+  fill: none !important;
+  stroke: #f12d24 !important;
+  stroke-width: 2 !important;
+  vector-effect: non-scaling-stroke !important;
+  stroke-linejoin: round !important;
+  stroke-linecap: round !important;
+  opacity: 0.96 !important;
+  filter: drop-shadow(0 0 2px rgba(255, 31, 22, 0.95)) drop-shadow(0 0 7px rgba(208, 20, 13, 0.55)) !important;
 }
 
-.veylith-health-monitor .vhm-area{
- display:block!important;
- fill:url(#vhmArea)!important;
- opacity:.62!important;
+.veylith-health-monitor .vhm-area {
+  display: block !important;
+  fill: url(#vhmArea) !important;
+  opacity: 0.62 !important;
 }
-
 
 /* VEYLITH HEALTH TREND GRAPH V4 */
-.veylith-health-monitor{
- top:-8px!important;
- left:2%!important;
- right:2%!important;
- width:96%!important;
- height:115px!important;
- min-height:115px!important;
- max-height:115px!important;
- z-index:3!important;
- overflow:hidden!important;
+.veylith-health-monitor {
+  top: -8px !important;
+  left: 2% !important;
+  right: 2% !important;
+  width: 96% !important;
+  height: 115px !important;
+  min-height: 115px !important;
+  max-height: 115px !important;
+  z-index: 3 !important;
+  overflow: hidden !important;
 }
 
-.veylith-health-monitor .vhm-chart{
- top:0!important;
- left:0!important;
- right:0!important;
- height:115px!important;
+.veylith-health-monitor .vhm-chart {
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  height: 115px !important;
 }
 
-.veylith-health-monitor .vhm-chart svg{
- width:100%!important;
- height:115px!important;
+.veylith-health-monitor .vhm-chart svg {
+  width: 100% !important;
+  height: 115px !important;
 }
 
-.veylith-health-monitor .vhm-chart:before{
- background-image:
-  linear-gradient(rgba(150,25,19,.11) 1px,transparent 1px),
-  linear-gradient(90deg,rgba(150,25,19,.11) 1px,transparent 1px)!important;
- background-size:100% 23px,55px 100%!important;
- opacity:.65!important;
+.veylith-health-monitor .vhm-chart:before {
+  background-image: linear-gradient(rgba(150, 25, 19, 0.11) 1px, transparent 1px), linear-gradient(90deg, rgba(150, 25, 19, 0.11) 1px, transparent 1px) !important;
+  background-size:
+    100% 23px,
+    55px 100% !important;
+  opacity: 0.65 !important;
 }
 
-.veylith-health-monitor .vhm-line{
- stroke:#f2382d!important;
- stroke-width:1.8!important;
- opacity:.96!important;
- filter:
-  drop-shadow(0 0 2px rgba(255,42,30,.9))
-  drop-shadow(0 0 6px rgba(215,24,16,.48))!important;
+.veylith-health-monitor .vhm-line {
+  stroke: #f2382d !important;
+  stroke-width: 1.8 !important;
+  opacity: 0.96 !important;
+  filter: drop-shadow(0 0 2px rgba(255, 42, 30, 0.9)) drop-shadow(0 0 6px rgba(215, 24, 16, 0.48)) !important;
 }
 
-.veylith-health-monitor .vhm-area{
- display:block!important;
- fill:url(#vhmArea)!important;
- opacity:.42!important;
+.veylith-health-monitor .vhm-area {
+  display: block !important;
+  fill: url(#vhmArea) !important;
+  opacity: 0.42 !important;
 }
-
 
 /* VEYLITH REAL HEALTH TREND V5 */
-.veylith-health-monitor{
- top:-14px!important;
- left:1%!important;
- right:1%!important;
- width:98%!important;
- height:122px!important;
- min-height:122px!important;
- max-height:122px!important;
- overflow:hidden!important;
- pointer-events:none!important;
- z-index:3!important;
+.veylith-health-monitor {
+  top: -14px !important;
+  left: 1% !important;
+  right: 1% !important;
+  width: 98% !important;
+  height: 122px !important;
+  min-height: 122px !important;
+  max-height: 122px !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+  z-index: 3 !important;
 }
 
-.veylith-health-monitor .vhm-chart{
- top:0!important;
- left:0!important;
- right:0!important;
- height:122px!important;
- overflow:hidden!important;
+.veylith-health-monitor .vhm-chart {
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  height: 122px !important;
+  overflow: hidden !important;
 }
 
-.veylith-health-monitor .vhm-chart svg{
- width:100%!important;
- height:122px!important;
- overflow:hidden!important;
+.veylith-health-monitor .vhm-chart svg {
+  width: 100% !important;
+  height: 122px !important;
+  overflow: hidden !important;
 }
 
-.veylith-health-monitor .vhm-chart:before{
- content:""!important;
- position:absolute!important;
- inset:0!important;
- background-image:
-  linear-gradient(rgba(150,28,21,.10) 1px,transparent 1px),
-  linear-gradient(90deg,rgba(150,28,21,.10) 1px,transparent 1px)!important;
- background-size:100% 24px,52px 100%!important;
- opacity:.72!important;
- mask-image:linear-gradient(
-  90deg,
-  transparent 0%,
-  black 6%,
-  black 94%,
-  transparent 100%
- )!important;
+.veylith-health-monitor .vhm-chart:before {
+  content: "" !important;
+  position: absolute !important;
+  inset: 0 !important;
+  background-image: linear-gradient(rgba(150, 28, 21, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(150, 28, 21, 0.1) 1px, transparent 1px) !important;
+  background-size:
+    100% 24px,
+    52px 100% !important;
+  opacity: 0.72 !important;
+  mask-image: linear-gradient(90deg, transparent 0%, black 6%, black 94%, transparent 100%) !important;
 }
 
-.veylith-health-monitor .vhm-line{
- display:block!important;
- fill:none!important;
- stroke:#f2352a!important;
- stroke-width:1.7!important;
- stroke-linecap:round!important;
- stroke-linejoin:round!important;
- vector-effect:non-scaling-stroke!important;
- opacity:.98!important;
- filter:
-  drop-shadow(0 0 2px rgba(255,45,32,.95))
-  drop-shadow(0 0 7px rgba(205,20,13,.58))!important;
+.veylith-health-monitor .vhm-line {
+  display: block !important;
+  fill: none !important;
+  stroke: #f2352a !important;
+  stroke-width: 1.7 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+  vector-effect: non-scaling-stroke !important;
+  opacity: 0.98 !important;
+  filter: drop-shadow(0 0 2px rgba(255, 45, 32, 0.95)) drop-shadow(0 0 7px rgba(205, 20, 13, 0.58)) !important;
 }
 
-.veylith-health-monitor .vhm-area{
- display:block!important;
- fill:url(#vhmArea)!important;
- opacity:.38!important;
+.veylith-health-monitor .vhm-area {
+  display: block !important;
+  fill: url(#vhmArea) !important;
+  opacity: 0.38 !important;
 }
-
 
 /* VEYLITH HEALTH GRAPH TOP POSITION V6 */
-.veylith-health-monitor{
- top:-38px!important;
- height:122px!important;
- min-height:122px!important;
- max-height:122px!important;
+.veylith-health-monitor {
+  top: -38px !important;
+  height: 122px !important;
+  min-height: 122px !important;
+  max-height: 122px !important;
 }
 
-.veylith-health-monitor .vhm-chart{
- top:0!important;
- height:122px!important;
+.veylith-health-monitor .vhm-chart {
+  top: 0 !important;
+  height: 122px !important;
 }
 
-.veylith-health-monitor .vhm-chart svg{
- height:122px!important;
+.veylith-health-monitor .vhm-chart svg {
+  height: 122px !important;
 }
-
 
 /* VEYLITH HEALTH GRAPH TOP POSITION V7 */
-.veylith-health-monitor{
- top:-62px!important;
+.veylith-health-monitor {
+  top: -62px !important;
 }
 
-
-.veylith-health-monitor{
- top:-50px!important;
+.veylith-health-monitor {
+  top: -50px !important;
 }
 
-
-.veylith-health-monitor{
- top:-40px!important;
+.veylith-health-monitor {
+  top: -40px !important;
 }
-

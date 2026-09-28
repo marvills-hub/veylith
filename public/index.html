@@ -3,193 +3,163 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Veylith Control Center</title>
-<link rel="stylesheet" href="/css/app.css">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script type="importmap">
-{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}
-</script>
+<title>Veylith — Autonomous Development System</title>
+<link rel="stylesheet" href="/css/cinematic.css">
 </head>
 <body>
-<div class="app">
-<div class="command-shell">
-<div class="identity">
+<div class="cinematic-shell">
+<div class="ambient ambient-one"></div>
+<div class="ambient ambient-two"></div>
+<div class="scanlines"></div>
+<div class="grid-floor"></div>
+
+<header class="topbar">
+<div class="brand-block">
+<div class="brand-row">
 <div class="brand">VEY<span>LITH</span></div>
-<div class="identity-sub">AUTONOMOUS DEVELOPMENT SYSTEM</div>
+<div class="system-live"><i></i><span id="systemStatus">CONNECTING</span></div>
 </div>
-<div class="command-actions">
-<button class="hud-button" id="demo">RUN DEMO</button>
-<button class="hud-button primary" id="newTask">+ DEVELOPMENT TASK</button>
-<div class="system-link"><span class="status-dot" id="systemDot"></span><span id="systemStatus">CONNECTING</span></div>
+<div class="subtitle">AUTONOMOUS DEVELOPMENT SYSTEM</div>
 </div>
-
-<section class="command-stage">
-<div class="hud-panel agent-performance">
-<div class="hud-title"><span>AGENT PERFORMANCE</span><b id="workerCount">0 SLOTS</b></div>
-<div class="agent-team" id="agentTeam"></div>
-</div>
-
-<div class="hud-panel project-progress">
-<div class="hud-title"><span>PROJECT PROGRESS</span><b id="projectCount">0 PROJECTS</b></div>
-<div class="projects" id="projects"></div>
-</div>
-
-<div class="hud-panel activity-panel">
-<div class="hud-title"><span>AGENT ACTIVITY</span><b id="eventCount">LIVE</b></div>
-<div class="feed" id="feed"></div>
-</div>
-
-<div class="hud-panel task-panel">
-<div class="hud-title"><span>CURRENT TASK</span><b id="taskCount">0 TASKS</b></div>
-<div class="task-list" id="taskList"></div>
-</div>
-
-<div class="veylith-center">
-<div class="center-radiance"></div>
-<div class="scene-ring ring-one"></div>
-<div class="scene-ring ring-two"></div>
-<div class="scene-ring ring-three"></div>
-<div id="veylithScene"></div>
-<div class="center-status">
+<div class="top-actions">
+<div class="active-project">
 <span>ACTIVE PROJECT</span>
-<strong id="teamProject">NO ACTIVE PROJECT</strong>
-<div id="currentAgent"></div>
+<strong id="activeProject">NO ACTIVE PROJECT</strong>
 </div>
+<a href="/v1" class="v1-link">V1 CONTROL CENTER</a>
 </div>
+</header>
 
-<div class="pipeline-zone">
-<div class="hud-title"><span>DEVELOPMENT PIPELINE</span><b>AUTONOMOUS FLOW</b></div>
-<div class="pipeline" id="pipeline"></div>
-</div>
+<main class="stage">
 
-<div class="micro-rail rail-left">
-<div class="micro-title">RUNTIME</div>
-<div class="micro-item"><span>WORKERS</span><b id="workersCount">0</b></div>
-<div class="micro-item"><span>RUNNING</span><b id="running">0</b></div>
-<div class="micro-item"><span>QUEUED</span><b id="queued">0</b></div>
-<div class="micro-item"><span>PAUSED</span><b id="paused">0</b></div>
-<div class="micro-item"><span>DONE</span><b id="completed">0</b></div>
-<div class="micro-item"><span>FAILED</span><b id="failed">0</b></div>
-</div>
-
-<div class="micro-rail rail-right">
-<div class="micro-title">SYSTEM</div>
-<div class="micro-item"><span>AI</span><b id="aiState">...</b></div>
-<div class="micro-item"><span>SANDBOX</span><b id="sandboxState">...</b></div>
-<div class="micro-item"><span>SECURITY</span><b id="securityState">...</b></div>
-<div class="micro-item"><span>QUEUE</span><b id="queueState">...</b></div>
-<div class="micro-item"><span>CPU</span><b id="cpuText">0%</b></div>
-<div class="micro-item"><span>MEM</span><b id="memoryText">0%</b></div>
+<section class="holo-panel runtime-panel tilt-left">
+<div class="panel-glow"></div>
+<header>
+<div><span class="eyebrow">LIVE SYSTEM STREAM</span><h2>RUNTIME TERMINAL</h2></div>
+<b id="runtimeState">WAITING</b>
+</header>
+<div class="terminal" id="runtimeTerminal">
+<div class="empty">Waiting for Veylith runtime activity...</div>
 </div>
 </section>
 
-<section class="telemetry-strip">
-<div class="tiny-chart"><span>CPU</span><canvas id="cpuChart"></canvas></div>
-<div class="tiny-chart"><span>MEMORY</span><canvas id="memoryChart"></canvas></div>
-<div class="telemetry-slot"><span>CONNECTION</span><b class="connection-badge offline" id="connectionBadge">OFFLINE</b></div>
-<div class="telemetry-slot wide"><span>RUNTIME</span><b id="connectionText">CONNECTING TO VEYLITH</b><small id="connectionDetail">LAST API RESPONSE NEVER</small></div>
-<div class="telemetry-slot"><span>LOGS</span><b id="logTotal">0</b></div>
-<div class="telemetry-slot"><span>WARN</span><b id="logWarnings">0</b></div>
-<div class="telemetry-slot"><span>ERRORS</span><b id="logErrors">0</b></div>
-<div class="telemetry-slot"><span>PROVIDER</span><b id="activeProvider">...</b></div>
-<div class="telemetry-slot"><span>MODEL</span><b id="activeModel">...</b></div>
+<section class="holo-panel agents-panel tilt-left-soft">
+<div class="panel-glow"></div>
+<header>
+<div><span class="eyebrow">AUTONOMOUS TEAM</span><h2>AGENT PERFORMANCE</h2></div>
+<b id="agentCount">0 AGENTS</b>
+</header>
+<div class="agents" id="agents"></div>
 </section>
 
-<div class="v2-control-center">
-<div class="v2-heading"><div><span>VEYlITH AUTONOMOUS OPERATIONS</span><strong>CONTROL CENTER V2</strong></div><b id="v2Project">NO PROJECT</b></div>
-<div class="v2-overview" id="v2Overview"></div>
-<div class="v2-grid">
-<div class="v2-panel v2-wide"><div class="v2-panel-head"><span>AUTONOMOUS EXECUTION</span><b>GOAL / WORK GRAPH</b></div><div class="v2-execution" id="v2Execution"></div></div>
-<div class="v2-panel"><div class="v2-panel-head"><span>RELIABILITY</span><b>LEASES / RETRIES</b></div><div id="v2Reliability"></div></div>
-<div class="v2-panel"><div class="v2-panel-head"><span>AI TEAM EXECUTION</span><b>ASSIGNMENTS</b></div><div id="v2Assignments"></div></div>
-<div class="v2-panel"><div class="v2-panel-head"><span>ENGINEERING QUALITY</span><b>TEST / REVIEW / REPAIR</b></div><div id="v2Engineering"></div></div>
-<div class="v2-panel v2-wide"><div class="v2-panel-head"><span>VERIFIED DELIVERY</span><b>GITHUB / RELEASE</b></div><div id="v2Release"></div></div>
-</div>
-</div>
-<section class="detail-deck">
-<div class="detail-grid">
-<div class="detail-panel">
-<div class="hud-title"><span>WORKER SLOTS</span><b>LIVE</b></div>
-<div class="workers" id="workers"></div>
-</div>
-<div class="detail-panel">
-<div class="hud-title"><span>AI CIRCUITS</span><b>PROVIDERS</b></div>
-<div id="circuits"></div>
-</div>
-<div class="detail-panel terminal-panel">
-<div class="hud-title"><span>EXECUTION STREAM</span><b>TERMINAL</b></div>
-<div class="terminal" id="terminal">Waiting for Veylith...</div>
-</div>
-</div>
+<section class="holo-panel projects-panel tilt-left-soft">
+<div class="panel-glow"></div>
+<header>
+<div><span class="eyebrow">DEVELOPMENT PORTFOLIO</span><h2>ALL VEYLITH PROJECTS</h2></div>
+<b id="projectCount">0 PROJECTS</b>
+</header>
+<div class="projects" id="projects"></div>
+</section>
 
-<div class="detail-panel connection-detail" id="connectionHealth">
-<div class="hud-title"><span>RUNTIME CONNECTION</span><b>WORKER HEARTBEATS</b></div>
-<div class="connection-overview">
-<div class="connection-main"><div class="connection-pulse"><span></span></div><div><strong>VEYlITH NETWORK</strong><span>REAL-TIME AUTONOMOUS CONNECTION</span></div></div>
-<div class="connection-legend"><span><i class="live"></i>LIVE</span><span><i class="reconnecting"></i>RECONNECTING</span><span><i class="stale"></i>STALE</span><span><i class="offline"></i>OFFLINE</span></div>
+<section class="holo-panel execution-panel tilt-left">
+<div class="panel-glow"></div>
+<header>
+<div><span class="eyebrow">AUTONOMOUS DELIVERY</span><h2>PROJECT EXECUTION OVERVIEW</h2></div>
+</header>
+<div class="execution-grid">
+<div><span>RUNNING</span><strong id="running">0</strong></div>
+<div><span>QUEUED</span><strong id="queued">0</strong></div>
+<div><span>COMPLETED</span><strong id="completed">0</strong></div>
+<div><span>FAILED</span><strong id="failed">0</strong></div>
 </div>
-<div class="connection-workers" id="connectionWorkers"><div class="empty">Waiting for worker heartbeat data.</div></div>
-</div>
+</section>
 
-<div class="detail-panel" id="publicationCenter">
-<div class="hud-title"><span>GIT / GITHUB PUBLICATION</span><b id="publicationProject">NO PUBLICATION</b></div>
-<div id="publicationState"></div>
-<div class="publication-layout">
-<div><div class="sub-title">PUBLICATION PIPELINE</div><div class="publication-pipeline" id="publicationPipeline"></div></div>
-<div><div class="sub-title">REPOSITORY STATE</div><div class="publication-meta" id="publicationMeta"></div></div>
+<section class="character-stage">
+<div class="character-aura"></div>
+<div class="character-ring ring-a"></div>
+<div class="character-ring ring-b"></div>
+<img class="veylith-character" src="/assets/images/veylith-v1.png" alt="Veylith">
+<div class="character-status">
+<span>CURRENT OPERATOR</span>
+<strong id="currentAgent">VEYlITH</strong>
+<small id="currentPhase">AWAITING AUTONOMOUS WORK</small>
 </div>
-<div class="error-box publication-error" id="publicationError"></div>
-</div>
+</section>
 
-<div class="detail-panel" id="operationsCenter">
-<div class="hud-title"><span>OPERATIONS CENTER</span><button class="mini-btn" id="opsRefresh">REFRESH</button></div>
-<div class="operations-summary">
-<div class="ops-card"><span>Security</span><strong class="ops-value" id="securityMode">LOADING</strong></div>
-<div class="ops-card"><span>Sandbox</span><strong class="ops-value" id="sandboxMode">LOADING</strong></div>
-<div class="ops-card"><span>Isolation</span><strong class="ops-value" id="isolationMode">LOADING</strong></div>
+<section class="holo-panel portfolio-panel tilt-right">
+<div class="panel-glow"></div>
+<header>
+<div><span class="eyebrow">PROJECT STATE</span><h2>PROJECT PORTFOLIO</h2></div>
+<b id="portfolioTotal">0</b>
+</header>
+<div class="portfolio-stats">
+<div><strong id="portfolioActive">0</strong><span>ACTIVE</span></div>
+<div><strong id="portfolioDone">0</strong><span>DELIVERED</span></div>
+<div><strong id="portfolioFailed">0</strong><span>FAILED</span></div>
 </div>
-<div class="operations-grid">
-<div class="operations-block">
-<div class="operations-head"><span>STRUCTURED LOGS</span><select id="logLevel"><option value="">ALL LEVELS</option><option value="debug">DEBUG</option><option value="info">INFO</option><option value="warn">WARN</option><option value="error">ERROR</option><option value="fatal">FATAL</option></select></div>
-<div class="ops-logs" id="opsLogs"><div class="empty">Loading logs...</div></div>
+</section>
+
+<section class="holo-panel velocity-panel tilt-right-soft">
+<div class="panel-glow"></div>
+<header>
+<div><span class="eyebrow">SYSTEM THROUGHPUT</span><h2>PROJECT VELOCITY</h2></div>
+</header>
+<div class="velocity">
+<div class="velocity-value"><strong id="velocityValue">0</strong><span>COMPLETED TASKS</span></div>
+<div class="velocity-bars" id="velocityBars"></div>
 </div>
-<div class="operations-side">
-<div class="operations-block"><div class="operations-head"><span>AI PROVIDERS</span></div><div id="providerList"><div class="empty">Loading providers...</div></div></div>
-<div class="operations-block"><div class="operations-head"><span>SECURITY EVENTS</span></div><div class="security-events" id="securityEvents"><div class="empty">Loading security events...</div></div></div>
-</div>
+</section>
+
+<section class="holo-panel workload-panel tilt-right-soft">
+<div class="panel-glow"></div>
+<header>
+<div><span class="eyebrow">LIVE AGENT PHASES</span><h2>AUTONOMOUS WORKLOAD</h2></div>
+<b id="workloadState">IDLE</b>
+</header>
+<div class="workload" id="workload"></div>
+</section>
+
+<section class="holo-panel forecast-panel tilt-right">
+<div class="panel-glow"></div>
+<header>
+<div><span class="eyebrow">DELIVERY INTELLIGENCE</span><h2>DELIVERY FORECAST</h2></div>
+</header>
+<div class="forecast">
+<div class="forecast-ring"><strong id="forecastPercent">0%</strong></div>
+<div class="forecast-copy">
+<span>CURRENT COMPLETION</span>
+<strong id="forecastProject">NO ACTIVE PROJECT</strong>
+<small id="forecastDetail">Waiting for project execution data.</small>
 </div>
 </div>
 </section>
+
+<section class="holo-panel roadmap-panel tilt-right">
+<div class="panel-glow"></div>
+<header>
+<div><span class="eyebrow">CURRENT DEVELOPMENT FLOW</span><h2>CURRENT PROJECT ROADMAP</h2></div>
+</header>
+<div class="roadmap" id="roadmap"></div>
+</section>
+
+<section class="holo-panel development-terminal">
+<div class="panel-glow"></div>
+<header>
+<div><span class="eyebrow">ACTIVE AUTONOMOUS ENGINEER</span><h2>DEVELOPMENT TERMINAL</h2></div>
+<b id="developerState">STANDBY</b>
+</header>
+<div class="development-feed" id="developmentFeed">
+<div class="empty">Waiting for development activity...</div>
+</div>
+</section>
+
+</main>
+
+<div class="connection-pill" id="connectionPill">
+<i></i><span>CONNECTING TO VEYLITH</span>
 </div>
 </div>
 
-<div class="modal" id="modal">
-<form class="dialog" id="taskForm">
-<h2>Create Development Task</h2>
-<input class="field" id="name" placeholder="Project name" required>
-<textarea class="field" id="prompt" placeholder="Describe what Veylith should build..." required></textarea>
-<div class="dialog-actions"><button type="button" class="btn" id="cancel">CANCEL</button><button class="btn primary" id="submitTask">QUEUE TASK</button></div>
-</form>
-</div>
-
-<div class="control-overlay" id="taskControl">
-<div class="control-panel">
-<div class="control-head"><div><h2 id="controlTaskName">Task</h2><div class="control-id" id="controlTaskId"></div></div><button class="close-control" id="closeTaskControl">×</button></div>
-<div class="control-status"><span class="status large" id="controlStatus">UNKNOWN</span><strong id="controlProgressText">0%</strong></div>
-<div class="control-progress"><div class="progress"><span id="controlProgressBar" style="width:0%"></span></div></div>
-<div class="control-grid">
-<div class="control-card"><div class="control-label">Current Phase</div><div class="control-value" id="controlPhase">—</div></div>
-<div class="control-card"><div class="control-label">Worker</div><div class="control-value" id="controlWorker">—</div></div>
-<div class="control-card"><div class="control-label">Job</div><div class="control-value" id="controlJob">—</div></div>
-<div class="control-card"><div class="control-label">Attempts</div><div class="control-value" id="controlAttempts">0</div></div>
-<div class="control-card"><div class="control-label">Repairs</div><div class="control-value" id="controlRepairs">0</div></div>
-</div>
-<div class="error-box" id="controlErrorBox"><span id="controlError"></span></div>
-<div class="control-section"><div class="control-section-title">Execution Controls</div><div class="control-buttons"><button class="btn" id="pauseTask">PAUSE</button><button class="btn success" id="resumeTask">RESUME</button><button class="btn danger" id="cancelTask">CANCEL</button></div></div>
-<div class="control-section"><div class="control-section-title">Priority</div><div class="priority-row"><input class="field" id="controlPriority" type="number" step="1"><button class="btn" id="applyPriority">APPLY</button></div></div>
-</div>
-</div>
-
-<script type="module" src="/js/app.js"></script>
+<script type="module" src="/js/cinematic.js"></script>
 </body>
 </html>
