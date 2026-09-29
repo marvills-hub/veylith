@@ -1,4 +1,4 @@
-﻿import express from "express";
+import express from "express";
 import {requestLogging} from "../logging/request-logging.middleware.js";
 import {queryLogs,logStats} from "../logging/log-query.service.js";
 import {logFiles,logStorageStatus} from "../logging/log-storage.service.js";
@@ -20,6 +20,7 @@ import {securityStatus,securityEvents} from "../security/security-status.service
 import {activeProjectTeams,projectTeam} from "../dashboard/autonomous-team.service.js";
 import {publicationForProject,publicationOverview} from "../dashboard/publication-monitor.service.js";
 import {semanticWorkerSnapshot} from "../team/global-role-scheduler.service.js";
+import {getVeylithFocus,focusProject,clearProjectFocus} from "../core/project-focus.service.js";
 
 const DEMO_PROMPT="[VEYLITH_DEMO] Create and test the autonomous Veylith hello API.";
 
@@ -66,6 +67,7 @@ export function createApp(){
     workerPool:workerPoolStatus(),
     workerSlots:listSlots(),
      semanticWorkers:semanticWorkerSnapshot(),
+     focus:getVeylithFocus(),
     ai:aiProviderStatus(),
     providerCircuits:providerCircuits(),
     github:{configured:GITHUB_ENABLED,owner:GITHUB_OWNER||null,visibility:GITHUB_VISIBILITY},
@@ -187,6 +189,20 @@ export function createApp(){
   catch(error){res.status(500).json({error:error instanceof Error?error.message:String(error)})}
  });
 
+ app.get("/api/projects/focus",(_req,res)=>{
+  try{res.json(getVeylithFocus())}
+  catch(error){res.status(500).json({error:error instanceof Error?error.message:String(error)})}
+ });
+
+ app.post("/api/projects/:id/focus",(req,res)=>{
+  try{res.json(focusProject(req.params.id,"user"))}
+  catch(error){res.status(400).json({error:error instanceof Error?error.message:String(error)})}
+ });
+
+ app.delete("/api/projects/focus",(_req,res)=>{
+  try{res.json(clearProjectFocus("user"))}
+  catch(error){res.status(500).json({error:error instanceof Error?error.message:String(error)})}
+ });
  app.get("/api/projects/:id/publication",(req,res)=>{
   try{
    const publication=publicationForProject(req.params.id);
@@ -246,6 +262,7 @@ export function createApp(){
  app.use((_req,res)=>res.sendFile(path.resolve("public/index.html")));
  return app;
 }
+
 
 
 

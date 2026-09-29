@@ -12,6 +12,7 @@ import {getAIProvider} from "../agent/provider.service.js";
 import {AIProviderError,isPermanentAIError} from "./ai-error.service.js";
 import {enqueueTask,pauseTaskJob,resumeTaskJob} from "../jobs/job.service.js";
 import {bootstrapAutonomousProject} from "../goals/autonomous-project.service.js";
+import {focusProject} from "./project-focus.service.js";
 
 const makeId=(prefix:string)=>`${prefix}_${crypto.randomUUID().replace(/-/g,"").slice(0,16)}`;
 const makeSlug=(value:string)=>value.toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,55)||`project-${Date.now()}`;
@@ -188,3 +189,4 @@ export async function failTask(task:any,error:unknown){
   event("task.failed",message,{taskId:task.id,projectId:task.project_id,level:"error"});
  }
 }
+

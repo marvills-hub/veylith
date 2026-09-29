@@ -3,6 +3,7 @@ import {JOB_HEARTBEAT_MS,JOB_RETRY_BASE_MS} from "../config/config.js";
 import {db} from "../database/database.js";
 import {event,setWorker} from "../core/telemetry.js";
 import {executeTask,failTask} from "../core/task.service.js";
+import {focusedProjectId} from "../core/project-focus.service.js";
 import {TaskControlError,assertTaskRunnable} from "../core/task-control.service.js";
 import {cancelTaskSandboxes} from "../sandbox/sandbox-manager.service.js";
 import {claimNextJob,completeJob,heartbeatJob,pauseJob,requeueJob,failJob,getJob,consumeJobAttempt,extendJobForAutonomousRecovery} from "./job.repository.js";
@@ -102,7 +103,9 @@ export async function runJobSlot(slot:number){
  if(activeSlots.has(slot))return false;
 
  const owner=runtimeOwner(slot);
- const job=claimNextJob(owner);
+ const projectId=focusedProjectId();
+ if(!projectId)return false;
+ const job=claimNextJob(owner,projectId);
 
  if(!job)return false;
 
@@ -537,6 +540,7 @@ export function activeJobSlots(){
 export function activeJobCount(){
  return activeSlots.size;
 }
+
 
 
 

@@ -23,26 +23,37 @@ export function createJob(task:any,availableAt=now()){
  return job(id)!;
 }
 
-export function claimNextJob(workerId:string){
+export function claimNextJob(workerId:string,projectId?:string|null){
+ if(!projectId)return undefined;
  const time=now(),lease=new Date(Date.now()+JOB_LEASE_MS).toISOString();
  db.exec("BEGIN IMMEDIATE");
  try{
   const candidate=db.prepare(`
    SELECT * FROM jobs
-   WHERE status IN ('queued','retry_wait')
+   WHERE project_id=?
+   AND status IN ('queued','retry_wait')
    AND available_at<=?
    AND attempts<max_attempts
    ORDER BY priority DESC,available_at ASC,created_at ASC
    LIMIT 1
-  `).get(time) as any;
+  `).get(projectId,time) as any;
   if(!candidate){
    db.exec("COMMIT");
    return undefined;
   }
   const result=db.prepare(`
-   UPDATE jobs SET status='running',claimed_by=?,claimed_at=?,lease_expires_at=?,heartbeat_at=?,updated_at=?
-   WHERE id=? AND status IN ('queued','retry_wait') AND available_at<=?
-  `).run(workerId,time,lease,time,time,candidate.id,time);
+   UPDATE jobs
+   SET status='running',
+       claimed_by=?,
+       claimed_at=?,
+       lease_expires_at=?,
+       heartbeat_at=?,
+       updated_at=?
+   WHERE id=?
+   AND project_id=?
+   AND status IN ('queued','retry_wait')
+   AND available_at<=?
+  `).run(workerId,time,lease,time,time,candidate.id,projectId,time);
   if(Number(result.changes)!==1){
    db.exec("ROLLBACK");
    return undefined;
@@ -234,6 +245,7 @@ export function queueStats(){
 export function listJobs(limit=200){
  return db.prepare("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?").all(limit) as unknown as JobRecord[];
 }
+
 
 
 
