@@ -1,0 +1,48 @@
+﻿.hud-panel,.detail-panel,.v2-panel,.pi-panel,.project-roadmap,.project-intelligence{
+ position:relative;
+ background:linear-gradient(135deg,rgba(18,9,9,.97),rgba(5,4,4,.98));
+ border:1px solid #4b1d19;
+ box-shadow:inset 0 1px rgba(255,90,70,.03),0 10px 30px rgba(0,0,0,.15);
+}
+.hud-panel:before,.detail-panel:before,.v2-panel:before{
+ content:"";
+ position:absolute;
+ left:-1px;
+ top:-1px;
+ width:52px;
+ height:2px;
+ background:#ff4438;
+ box-shadow:0 0 8px rgba(255,68,56,.45);
+}
+.hud-title,.v2-panel-head,.operations-head,.pi-head{
+ min-height:40px;
+ display:flex;
+ align-items:center;
+ justify-content:space-between;
+ gap:10px;
+ padding:0 12px;
+ border-bottom:1px solid #351512;
+ background:linear-gradient(90deg,rgba(122,22,16,.13),transparent 50%);
+}
+.hud-title span,.v2-panel-head span,.pi-head span{
+ color:#ff5549;
+ font:900 11px var(--font-mono);
+ letter-spacing:.8px;
+}
+.hud-title b,.v2-panel-head b,.pi-head b{
+ color:#b69c94;
+ font:800 9px var(--font-mono);
+}
+.status{
+ font:900 9px var(--font-mono);
+ text-transform:uppercase;
+}
+.status.completed,.status.verified,.status.live,.status.working,.status.active{color:#52d67b}
+.status.failed,.status.cancelled{color:#ff5146}
+.status.queued,.status.waiting,.status.warning{color:#e6a540}
+.progress{height:4px;background:#28100e;overflow:hidden}
+.progress span{
+ display:block;
+ height:100%;
+ background:linear-gradient(90deg,#751a15,#ff4438,#d99a38);
+}

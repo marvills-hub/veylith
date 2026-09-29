@@ -178,6 +178,26 @@ export async function runJobSlot(slot:number){
    throw new Error(`Task ${job.task_id} not found.`);
   }
 
+  const executionTime=new Date().toISOString();
+  db.prepare(`
+   UPDATE tasks
+   SET status='running',
+       phase='executing',
+       started_at=COALESCE(started_at,?),
+       error=NULL,
+       updated_at=?
+   WHERE id=?
+   AND status IN ('queued','retry_wait','paused')
+  `).run(executionTime,executionTime,task.id);
+  db.prepare(`
+   UPDATE projects
+   SET status='active',
+       phase='autonomous_development',
+       updated_at=?
+   WHERE id=?
+   AND status NOT IN ('completed','failed','cancelled')
+  `).run(executionTime,task.project_id);
+
   const goalManaged=isGoalManagedTask(task.id);
 
   if(goalManaged){
@@ -222,6 +242,10 @@ export async function runJobSlot(slot:number){
    const action=classification.cancel?"cancel":"pause";
 
    await cancelTaskSandboxes(job.task_id,action);
+
+    if(classification.pause){
+     pauseJob(job.id,message);
+    }
 
    event(
     classification.cancel?"job.cancelled":"job.paused",
@@ -288,11 +312,12 @@ export async function runJobSlot(slot:number){
     classification.kind==="provider_retryable"||
     current?.status==="paused"
    ){
-    pauseJob(job.id,message);
+    const delay=retryDelay(Math.max(1,currentJob.attempts+1));
+    requeueJob(job.id,delay,message);
 
     event(
      "job.provider_wait",
-     `Job ${job.id} paused while waiting for provider`,
+     `Job ${job.id} waiting for provider retry`,
      {
       jobId:job.id,
       taskId:job.task_id,

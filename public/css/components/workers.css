@@ -1,0 +1,121 @@
+﻿.workers,#circuits{
+ height:300px;
+ overflow:auto;
+ padding:6px;
+}
+.worker-row,.health-row{
+ display:flex;
+ align-items:center;
+ justify-content:space-between;
+ gap:10px;
+ min-height:48px;
+ padding:9px;
+ border-bottom:1px solid #301310;
+}
+.worker-main{
+ display:flex;
+ align-items:center;
+ gap:8px;
+ min-width:0;
+}
+.worker-main strong{
+ display:block;
+ max-width:260px;
+ overflow:hidden;
+ text-overflow:ellipsis;
+ white-space:nowrap;
+ color:#ead9d3;
+ font:900 9px var(--font-mono);
+}
+.worker-main small{
+ display:block;
+ margin-top:4px;
+ color:#927871;
+ font:8px var(--font-mono);
+}
+.connection-detail{margin-top:11px}
+.connection-overview{
+ display:flex;
+ justify-content:space-between;
+ align-items:center;
+ padding:16px;
+ border-bottom:1px solid #351512;
+}
+.connection-main{
+ display:flex;
+ align-items:center;
+ gap:12px;
+}
+.connection-main strong{
+ display:block;
+ color:#f1dfd9;
+ font:900 13px var(--font-mono);
+}
+.connection-main span{
+ display:block;
+ color:#947a72;
+ font:8px var(--font-mono);
+ margin-top:4px;
+}
+.connection-pulse{
+ width:29px;
+ height:29px;
+ display:grid;
+ place-items:center;
+ border:1px solid #28613c;
+ border-radius:50%;
+}
+.connection-pulse span{
+ width:8px;
+ height:8px;
+ border-radius:50%;
+ background:#52d67b;
+ box-shadow:0 0 11px #52d67b;
+}
+.connection-legend{
+ display:flex;
+ gap:14px;
+ color:#a08780;
+ font:8px var(--font-mono);
+}
+.connection-workers{
+ display:grid!important;
+ grid-template-columns:repeat(3,1fr)!important;
+ gap:6px!important;
+ padding:8px!important;
+ max-height:430px!important;
+ overflow:auto!important;
+}
+.connection-worker{
+ display:grid;
+ grid-template-columns:auto 1fr auto;
+ gap:9px;
+ min-width:0;
+ min-height:66px;
+ padding:11px;
+ background:#090505;
+ border:1px solid #321411;
+}
+.connection-worker strong{
+ display:block;
+ color:#e9d8d2;
+ overflow:hidden;
+ text-overflow:ellipsis;
+ white-space:nowrap;
+ font:900 9px var(--font-mono);
+}
+.connection-worker span,.connection-worker small{
+ color:#92776f;
+ font:8px var(--font-mono);
+}
+.connection-worker>b{
+ color:#52d67b;
+ font:900 8px var(--font-mono);
+}
+.worker-health-dot{
+ width:6px;
+ height:6px;
+ border-radius:50%;
+ background:#52d67b;
+ margin-top:4px;
+}

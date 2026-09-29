@@ -1,0 +1,12 @@
+﻿.veylith-health-monitor{position:absolute!important;left:50%!important;bottom:8px!important;top:auto!important;transform:translateX(-50%)!important;width:88%!important;height:92px!important;z-index:8!important;background:linear-gradient(180deg,rgba(8,4,4,.15),rgba(8,4,4,.72))!important;border:0!important;pointer-events:none}
+.vhm-head{display:flex;justify-content:space-between;padding:4px 8px;position:relative;z-index:2}
+.vhm-head strong{font:800 8px var(--font-mono);color:#b99088}
+.vhm-head span{font:7px var(--font-mono);color:#705852}
+.vhm-score{text-align:right}
+.vhm-score b{display:block;color:var(--green);font:900 12px var(--font-mono)}
+.vhm-chart{position:absolute!important;inset:18px 0 10px!important;height:auto!important}
+.vhm-chart svg{width:100%!important;height:100%!important}
+.vhm-line{fill:none;stroke:#ef3c31;stroke-width:1.5;filter:drop-shadow(0 0 4px #ef3c31)}
+.vhm-area{fill:url(#vhmArea)}
+.vhm-grid line{stroke:#341310;stroke-width:.5}
+.vhm-scale,.vhm-foot{display:none!important}

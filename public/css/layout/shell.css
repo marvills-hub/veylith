@@ -1,0 +1,28 @@
+﻿.app{width:100%;min-height:100vh}
+.command-shell{
+ width:min(calc(100% - 32px),1680px);
+ margin:auto;
+ padding-bottom:55px;
+}
+.command-stage{
+ position:relative;
+ display:grid;
+ grid-template-columns:350px minmax(600px,1fr) 370px;
+ grid-template-rows:255px 320px 82px;
+ column-gap:14px;
+ row-gap:12px;
+ min-height:0;
+}
+.command-stage>.agent-performance{grid-column:1;grid-row:1}
+.command-stage>.project-progress{grid-column:3;grid-row:1}
+.command-stage>.activity-panel{grid-column:1;grid-row:2}
+.command-stage>.task-panel{grid-column:3;grid-row:2}
+.command-stage>.veylith-center{grid-column:2;grid-row:1/3}
+.command-stage>.pipeline-zone{grid-column:1/4;grid-row:3}
+.micro-rail{display:none!important}
+.v35-dashboard,.v35-column,.v35-left-header,.v35-left-content{display:contents!important}
+.project-intelligence,.project-roadmap,.all-project-monitor,.project-execution-overview,.main-terminal{
+ position:relative!important;
+ inset:auto!important;
+ transform:none!important;
+}

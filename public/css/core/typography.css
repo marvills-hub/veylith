@@ -1,0 +1,33 @@
+﻿body{
+ font-family:var(--font-ui);
+ font-size:14px;
+ line-height:1.45;
+}
+.brand{
+ font-size:29px;
+ font-weight:900;
+ letter-spacing:9px;
+ color:#fff;
+ line-height:1;
+}
+.brand span{color:var(--red)}
+.identity-sub{
+ margin-top:8px;
+ color:#b17c73;
+ font:700 9px var(--font-mono);
+ letter-spacing:3.2px;
+}
+.hud-title,.v2-panel-head,.operations-head,.sub-title,.pi-head{
+ font-family:var(--font-mono);
+ text-transform:uppercase;
+ letter-spacing:.75px;
+}
+.hud-title span,.v2-panel-head span,.sub-title{
+ color:var(--red);
+ font-weight:900;
+}
+.empty{
+ color:var(--muted);
+ font:11px/1.6 var(--font-mono);
+ padding:16px;
+}

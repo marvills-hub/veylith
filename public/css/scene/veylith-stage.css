@@ -1,0 +1,8 @@
+﻿.veylith-center{position:relative!important;inset:auto!important;transform:none!important;width:100%!important;height:100%!important;min-height:720px!important;overflow:visible!important;z-index:2}
+#veylithScene{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;z-index:4!important}
+.center-radiance{position:absolute;left:50%;top:47%;width:90%;aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle,rgba(151,26,18,.20),rgba(75,8,5,.08) 38%,transparent 68%);filter:blur(8px);z-index:0}
+.scene-ring{position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);border-radius:50%;border:1px solid rgba(154,42,32,.18);pointer-events:none;z-index:1}
+.ring-one{width:72%;aspect-ratio:1}
+.ring-two{width:88%;aspect-ratio:1;border-style:dashed}
+.ring-three{width:104%;aspect-ratio:1;border-color:rgba(120,30,24,.09)}
+.center-status{display:none!important}

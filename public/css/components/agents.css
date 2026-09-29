@@ -1,0 +1,44 @@
+﻿.agent-team{
+ display:grid;
+ grid-template-columns:repeat(3,minmax(0,1fr));
+ align-content:start;
+ padding:7px;
+ gap:6px;
+}
+.agent-row,.agent-card,.team-member{
+ min-width:0;
+ min-height:64px;
+ border:1px solid #381714;
+ background:#0a0606;
+ padding:9px;
+}
+.agent-row:hover,.agent-card:hover,.team-member:hover{
+ border-color:#793028;
+ background:#120807;
+}
+.agent-row strong,.agent-card strong,.team-member strong{
+ display:block;
+ color:#f4e4df;
+ font:900 10px/1.25 var(--font-mono);
+ white-space:nowrap;
+ overflow:hidden;
+ text-overflow:ellipsis;
+}
+.agent-row small,.agent-card small,.team-member small{
+ display:block;
+ margin-top:6px;
+ color:#a38a82;
+ font:8px var(--font-mono);
+}
+.state-indicator{
+ display:inline-block;
+ width:6px;
+ height:6px;
+ border-radius:50%;
+ margin-right:6px;
+ background:#77645e;
+}
+.state-indicator.working,.state-indicator.running,.state-indicator.completed{
+ background:#52d67b;
+ box-shadow:0 0 7px rgba(82,214,123,.6);
+}

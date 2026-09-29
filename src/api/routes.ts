@@ -19,6 +19,7 @@ import {sandboxStatus} from "../sandbox/sandbox-manager.service.js";
 import {securityStatus,securityEvents} from "../security/security-status.service.js";
 import {activeProjectTeams,projectTeam} from "../dashboard/autonomous-team.service.js";
 import {publicationForProject,publicationOverview} from "../dashboard/publication-monitor.service.js";
+import {semanticWorkerSnapshot} from "../team/global-role-scheduler.service.js";
 
 const DEMO_PROMPT="[VEYLITH_DEMO] Create and test the autonomous Veylith hello API.";
 
@@ -64,6 +65,7 @@ export function createApp(){
     version:VERSION,
     workerPool:workerPoolStatus(),
     workerSlots:listSlots(),
+     semanticWorkers:semanticWorkerSnapshot(),
     ai:aiProviderStatus(),
     providerCircuits:providerCircuits(),
     github:{configured:GITHUB_ENABLED,owner:GITHUB_OWNER||null,visibility:GITHUB_VISIBILITY},
@@ -244,6 +246,7 @@ export function createApp(){
  app.use((_req,res)=>res.sendFile(path.resolve("public/index.html")));
  return app;
 }
+
 
 
 

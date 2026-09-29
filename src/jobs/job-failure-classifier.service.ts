@@ -76,7 +76,7 @@ export function classifyJobFailure(error:unknown,task?:any):JobFailureClassifica
    consumeAttempt:false,
    retryable:true,
    terminal:false,
-   pause:true,
+   pause:false,
    cancel:false,
    reason:message(error)
   };

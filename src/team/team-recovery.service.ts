@@ -1,4 +1,5 @@
-﻿import crypto from "node:crypto";
+import {AIProviderError} from "../core/ai-error.service.js";
+import crypto from "node:crypto";
 import {db,memory} from "../database/database.js";
 import {now,MAX_REPAIR_ATTEMPTS} from "../config/config.js";
 import {event} from "../core/telemetry.js";
@@ -299,14 +300,14 @@ export async function recoverGoalWork(input:{
  let reviewRejected=Boolean(review&&!review.approved);
  let history=repairHistoryForProject(input.projectId);
  let attempt=Math.max(recovery.attempts,Number(input.task.repair_attempts||0));
+ let fingerprintAttempt=0;
  const currentFailure=()=>reviewRejected&&review?reviewFailure(review):validation;
- while((!validation.success||reviewRejected)&&attempt<recovery.maxAttempts){
-  attempt++;
-  taskRepairAttempts(input.task.id,attempt);
-  const failure=currentFailure();
+ while((!validation.success||reviewRejected)&&fingerprintAttempt<recovery.maxAttempts){
+   const nextAttempt=attempt+1;
+   const failure=currentFailure();
   event(
    "team.recovery_started",
-   `Team recovery ${attempt}/${recovery.maxAttempts}`,
+   `Team recovery ${nextAttempt}/${recovery.maxAttempts}`,
    {
     taskId:input.task.id,
     projectId:input.projectId,
@@ -316,7 +317,7 @@ export async function recoverGoalWork(input:{
      goalId:input.goalId,
      workItemId:input.workItemId,
      assignmentId:input.assignmentId,
-     attempt,
+      attempt:nextAttempt,
      fingerprint:failureFingerprint(failure),
      source:reviewRejected?"review":"validation"
     }
@@ -331,7 +332,7 @@ export async function recoverGoalWork(input:{
   );
   saveAttempt(
    recovery.id,
-   attempt,
+    nextAttempt,
    diagnostic,
    failure,
    failure?.failure?.stderr||
@@ -349,7 +350,7 @@ export async function recoverGoalWork(input:{
      goalId:input.goalId,
      workItemId:input.workItemId,
      assignmentId:input.assignmentId,
-     attempt,
+      attempt:nextAttempt,
      fingerprint:diagnostic.fingerprint,
      confidence:diagnostic.confidence,
      rootCause:diagnostic.rootCause,
@@ -376,7 +377,14 @@ export async function recoverGoalWork(input:{
     input.project,
     input.plan
    );
+    attempt=nextAttempt;
+    fingerprintAttempt++;
+    taskRepairAttempts(input.task.id,attempt);
   }catch(error){
+    if(error instanceof AIProviderError&&error.retryable)throw error;
+    attempt=nextAttempt;
+    fingerprintAttempt++;
+    taskRepairAttempts(input.task.id,attempt);
    const repairError=error instanceof Error?error.message:String(error);
    const rejected:RepairHistoryItem={
     attempt,
@@ -495,6 +503,7 @@ export async function recoverGoalWork(input:{
    (!validation.success||reviewRejected)&&
    afterRepairFingerprint!==beforeRepairFingerprint
   ){
+    fingerprintAttempt=0;
    rememberRecoveryOutcome({
     projectId:input.projectId,
     taskId:input.task.id,

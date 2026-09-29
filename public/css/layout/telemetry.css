@@ -1,0 +1,45 @@
+﻿.telemetry-strip{
+ position:relative!important;
+ inset:auto!important;
+ width:100%!important;
+ max-width:none!important;
+ margin:11px 0!important;
+ display:grid!important;
+ grid-template-columns:150px 150px 120px minmax(250px,1.5fr) repeat(5,minmax(100px,1fr));
+ gap:1px;
+ background:#401714;
+ border:1px solid #4a1b18;
+}
+.telemetry-strip>*{
+ background:#090606;
+ min-height:82px;
+ padding:12px;
+}
+.tiny-chart span,.telemetry-slot span{
+ display:block;
+ color:#9c7e76;
+ font:800 9px var(--font-mono);
+ letter-spacing:1px;
+ margin-bottom:8px;
+ text-transform:uppercase;
+}
+.tiny-chart canvas{width:100%!important;height:43px!important}
+.telemetry-slot{
+ display:flex;
+ flex-direction:column;
+ justify-content:center;
+}
+.telemetry-slot b{
+ font:900 11px var(--font-mono);
+ color:#eedbd5;
+ overflow:hidden;
+ text-overflow:ellipsis;
+}
+.telemetry-slot small{
+ color:#806760;
+ font:8px var(--font-mono);
+ margin-top:6px;
+}
+.connection-badge.live{color:#52d67b}
+.connection-badge.offline{color:#ff5146}
+.connection-badge.stale,.connection-badge.reconnecting{color:#e6a540}

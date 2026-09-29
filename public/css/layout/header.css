@@ -1,0 +1,48 @@
+﻿.command-shell>.identity{
+ height:var(--header-h);
+ display:flex;
+ flex-direction:column;
+ justify-content:center;
+}
+.command-actions{
+ position:absolute;
+ right:max(14px,calc((100vw - var(--max))/2));
+ top:18px;
+ display:flex;
+ align-items:center;
+ gap:7px;
+ z-index:100;
+}
+.hud-button,.btn,.mini-btn{
+ min-height:31px;
+ border:1px solid var(--border-bright);
+ background:#0c0707;
+ color:#dfcbc5;
+ padding:8px 13px;
+ font:800 9px var(--font-mono);
+ letter-spacing:.7px;
+ text-transform:uppercase;
+}
+.hud-button:hover,.btn:hover,.mini-btn:hover{
+ background:#1c0b0a;
+ border-color:var(--red);
+ color:#fff;
+}
+.hud-button.primary,.btn.primary{
+ background:linear-gradient(180deg,#821c17,#58110e);
+ color:#fff;
+ border-color:#b9342c;
+ box-shadow:inset 0 0 14px #c32c231d;
+}
+.system-link{
+ display:flex;
+ align-items:center;
+ gap:7px;
+ margin-left:7px;
+ color:#a18b84;
+ font:800 9px var(--font-mono);
+}
+.status-dot{width:7px;height:7px;border-radius:50%;background:#777}
+.status-dot.online{background:var(--green);box-shadow:0 0 9px var(--green)}
+.status-dot.offline{background:var(--red);box-shadow:0 0 8px #ff292966}
+.status-dot.reconnecting,.status-dot.stale{background:var(--gold)}

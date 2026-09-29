@@ -1,0 +1,48 @@
+﻿.feed{
+ position:relative;
+ padding:8px 10px;
+ font-family:var(--font-mono);
+ background:linear-gradient(90deg,transparent 36px,#29110f 37px,transparent 38px);
+}
+.event-row,.feed-row,.activity-row{
+ position:relative;
+ display:grid;
+ grid-template-columns:74px 1fr;
+ gap:12px;
+ min-height:45px;
+ padding:10px 6px 10px 12px;
+ border-bottom:1px solid #2b1210;
+ color:#c0aaa3;
+ font-size:10px;
+ line-height:1.5;
+}
+.event-row:before,.feed-row:before,.activity-row:before{
+ content:"";
+ position:absolute;
+ left:31px;
+ top:17px;
+ width:6px;
+ height:6px;
+ border-radius:50%;
+ background:#a33128;
+ box-shadow:0 0 6px rgba(255,68,56,.35);
+}
+.event-row strong,.feed-row strong,.activity-row strong{
+ color:#f1ded8;
+ font-size:10px;
+}
+.event-row time,.feed-row time,.activity-row time{color:#957b74}
+.activity-terminal{
+ position:relative!important;
+ inset:auto!important;
+ width:auto!important;
+ height:320px!important;
+}
+.feed:empty:after{
+ content:"WAITING FOR AGENT ACTIVITY...";
+ display:block;
+ padding:20px 10px 20px 16px;
+ color:#79615a;
+ font:9px var(--font-mono);
+ letter-spacing:1px;
+}

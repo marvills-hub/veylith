@@ -1,0 +1,12 @@
+﻿*{box-sizing:border-box}
+html{background:var(--bg);scroll-behavior:smooth}
+html,body{margin:0;min-height:100%;width:100%}
+body{background:radial-gradient(circle at 50% 18%,#160706 0,#090404 34%,#050404 65%,#030303 100%);color:var(--text);overflow-x:hidden}
+button,input,textarea,select{font:inherit}
+button{cursor:pointer}
+canvas{display:block}
+a{color:inherit}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:#080505}
+::-webkit-scrollbar-thumb{background:#51201c}
+::-webkit-scrollbar-thumb:hover{background:#843028}

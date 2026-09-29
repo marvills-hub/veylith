@@ -1,0 +1,29 @@
+﻿.detail-deck{
+ position:relative!important;
+ inset:auto!important;
+ width:100%!important;
+ max-width:none!important;
+ margin:11px 0 0!important;
+}
+.detail-grid{
+ display:grid!important;
+ grid-template-columns:1fr 1fr 1.6fr!important;
+ gap:9px!important;
+}
+.detail-grid>.detail-panel{
+ height:340px!important;
+ overflow:hidden!important;
+}
+.terminal{
+ height:299px!important;
+ overflow:auto!important;
+ padding:12px!important;
+ background:
+  linear-gradient(rgba(48,16,13,.08) 1px,transparent 1px),
+  #020202;
+ background-size:100% 25px;
+ color:#d0bbb4;
+ font:9px/1.7 var(--font-mono);
+ white-space:pre-wrap;
+}
+.main-terminal{display:none!important}

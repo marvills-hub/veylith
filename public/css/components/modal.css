@@ -1,0 +1,13 @@
+﻿.modal,.control-overlay{position:fixed;inset:0;background:rgba(0,0,0,.78);backdrop-filter:blur(5px);z-index:1000;display:none;align-items:center;justify-content:center}
+.modal.open,.modal.active,.control-overlay.open,.control-overlay.active{display:flex}
+.dialog,.control-panel{width:min(620px,calc(100vw - 30px));max-height:90vh;overflow:auto;background:#0b0707;border:1px solid #6e231d;padding:20px;box-shadow:0 0 60px #000}
+.dialog h2,.control-panel h2{margin:0 0 15px;color:var(--red);font:900 17px var(--font-mono)}
+.field{width:100%;background:#060404;border:1px solid #3b1815;color:#e6d5cf;padding:10px;margin-bottom:8px;outline:none}
+textarea.field{min-height:130px;resize:vertical}
+.field:focus{border-color:var(--red)}
+.dialog-actions,.control-buttons,.priority-row{display:flex;gap:8px;justify-content:flex-end}
+.control-head,.control-status{display:flex;justify-content:space-between;align-items:center}
+.control-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin:12px 0}
+.control-card{background:#080505;border:1px solid #2a1210;padding:9px}
+.control-label{color:#78635d;font:7px var(--font-mono)}
+.control-value{margin-top:5px;font:800 9px var(--font-mono)}

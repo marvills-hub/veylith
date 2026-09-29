@@ -1,0 +1,29 @@
+﻿.projects{padding:6px 9px}
+.project-row{
+ min-height:54px;
+ padding:10px 8px;
+ border-bottom:1px solid #321512;
+}
+.project-row:hover{background:#110706}
+.project-row:last-child{border-bottom:0}
+.project-head,.project-meta{
+ display:flex;
+ justify-content:space-between;
+ align-items:center;
+ gap:10px;
+}
+.project-head strong{
+ color:#f0dfda;
+ font:900 10px var(--font-mono);
+ overflow:hidden;
+ text-overflow:ellipsis;
+ white-space:nowrap;
+}
+.project-meta{
+ margin:7px 0 5px;
+ color:#a18780;
+ font:8px var(--font-mono);
+}
+.all-project-monitor,.project-execution-overview,.project-intelligence,.project-roadmap{
+ display:none!important;
+}

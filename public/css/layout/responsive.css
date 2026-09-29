@@ -1,0 +1,56 @@
+﻿@media(max-width:1500px){
+ .command-shell{width:calc(100% - 22px)}
+ .command-stage{grid-template-columns:320px minmax(520px,1fr) 340px}
+ .connection-workers{grid-template-columns:repeat(3,1fr)!important}
+}
+@media(max-width:1200px){
+ .command-stage{
+  grid-template-columns:1fr 1fr;
+  grid-template-rows:auto;
+ }
+ .command-stage>.veylith-center{
+  grid-column:1/3;
+  grid-row:1;
+  min-height:650px!important;
+ }
+ .command-stage>.agent-performance{grid-column:1;grid-row:2}
+ .command-stage>.project-progress{grid-column:2;grid-row:2}
+ .command-stage>.activity-panel{grid-column:1;grid-row:3}
+ .command-stage>.task-panel{grid-column:2;grid-row:3}
+ .command-stage>.pipeline-zone{grid-column:1/3;grid-row:4}
+ .telemetry-strip{grid-template-columns:repeat(3,1fr)}
+ .v2-grid{grid-template-columns:1fr}
+ .detail-grid{grid-template-columns:1fr 1fr!important}
+ .terminal-panel{grid-column:1/3}
+ .connection-workers{grid-template-columns:repeat(2,1fr)!important}
+ .publication-layout,.operations-grid{grid-template-columns:1fr!important}
+}
+@media(max-width:760px){
+ .command-shell{width:calc(100% - 12px)}
+ .command-stage{display:flex;flex-direction:column}
+ .command-stage>.veylith-center{
+  order:-1;
+  min-height:540px!important;
+ }
+ .agent-performance,.project-progress{height:280px}
+ .activity-panel,.task-panel{height:330px}
+ .agent-team{grid-template-columns:repeat(2,1fr)}
+ .pipeline-zone{height:auto!important}
+ .pipeline{
+  height:auto;
+  grid-template-columns:repeat(3,1fr);
+  gap:10px!important;
+  padding:12px!important;
+ }
+ .pipeline:before{display:none}
+ .telemetry-strip{grid-template-columns:1fr 1fr}
+ .v2-overview{grid-template-columns:1fr 1fr}
+ .detail-grid{grid-template-columns:1fr!important}
+ .terminal-panel{grid-column:auto}
+ .connection-workers{grid-template-columns:1fr!important}
+ .publication-pipeline,.publication-meta{grid-template-columns:1fr!important}
+ .git-meta-card.wide{grid-column:auto}
+ .operations-summary{grid-template-columns:1fr!important}
+ .ops-log{grid-template-columns:80px 50px 1fr}
+ .ops-log p{grid-column:1/4}
+}

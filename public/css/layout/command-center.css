@@ -1,0 +1,40 @@
+﻿.command-stage:before{
+ content:"";
+ position:absolute;
+ left:50%;
+ top:42%;
+ width:64%;
+ height:100%;
+ transform:translate(-50%,-50%);
+ background:
+  radial-gradient(circle at center,rgba(124,18,13,.13),transparent 45%),
+  radial-gradient(ellipse at center,rgba(64,8,6,.08),transparent 72%);
+ pointer-events:none;
+}
+.command-stage:after{
+ content:"";
+ position:absolute;
+ left:50%;
+ bottom:78px;
+ width:52%;
+ height:1px;
+ transform:translateX(-50%);
+ background:linear-gradient(90deg,transparent,#4f1714,#a82b24,#4f1714,transparent);
+ opacity:.55;
+ pointer-events:none;
+}
+.command-stage>.hud-panel{min-height:0}
+.agent-performance,.project-progress{height:235px}
+.activity-panel,.task-panel{height:300px}
+.agent-team,.projects,.feed,.task-list{
+ height:calc(100% - 36px);
+ overflow:auto;
+}
+.pipeline-zone{
+ position:relative!important;
+ inset:auto!important;
+ width:100%!important;
+ height:74px!important;
+ min-height:74px!important;
+ margin:0!important;
+}
